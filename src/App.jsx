@@ -861,15 +861,35 @@ export default function App() {
   const handleExportPNG = () => {
     if (!imgRef.current) return;
     const offscreen = document.createElement("canvas");
-    offscreen.width = imgSize.w; offscreen.height = imgSize.h;
+    offscreen.width = imgSize.w;
+    offscreen.height = imgSize.h;
     const ctx = offscreen.getContext("2d");
     ctx.drawImage(imgRef.current, 0, 0);
-    const mc = document.createElement("canvas");
-    mc.width = imgSize.w; mc.height = imgSize.h;
-    drawAll(mc.getContext("2d"), markers, 1, markerSize, 1, shapes, null, false, null, shapeStrokeWidth);
-    ctx.drawImage(mc, 0, 0);
+
+    // 오버레이: 마커 + 원형(shapes). 화면 두께를 원본 해상도로 환산
+    // (화면 lineWidth는 CSS px 고정이라, scale=1로내면면 선이 거의 안 보임)
+    const exportStroke = scale > 0 ? shapeStrokeWidth / scale : shapeStrokeWidth;
+    const overlay = document.createElement("canvas");
+    overlay.width = imgSize.w;
+    overlay.height = imgSize.h;
+    drawAll(
+      overlay.getContext("2d"),
+      markers,
+      1,
+      markerSize,
+      1,
+      shapesRef.current,
+      null,
+      false,
+      null,
+      exportStroke,
+    );
+    ctx.drawImage(overlay, 0, 0);
+
     const a = document.createElement("a");
-    a.href = offscreen.toDataURL("image/png"); a.download = "route_map.png"; a.click();
+    a.href = offscreen.toDataURL("image/png");
+    a.download = "route_map.png";
+    a.click();
   };
 
   const nextNum = nextHoldNumber;
