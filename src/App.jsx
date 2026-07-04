@@ -142,8 +142,8 @@ export default function App() {
     const rect = canvasRef.current.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const x = (clientX - rect.left) / rect.width * imgSize.w;
-    const y = (clientY - rect.top) / rect.height * imgSize.h;
+    const x = (clientX - rect.left) / scale;
+    const y = (clientY - rect.top) / scale;
     const snapshot = makeSnapshot();
 
     if (mode === "duo") {
