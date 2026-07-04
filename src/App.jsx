@@ -49,14 +49,19 @@ function getShapeHandles(shape) {
   ];
 }
 
-function drawEllipseShape(ctx, shape, s) {
+// markerSize=14(기본)일 때 테두리 두께 4px, 슬라이더에 비례
+function ellipseStrokeWidth(markerSize = MARKER_RADIUS) {
+  return (markerSize / MARKER_RADIUS) * 4;
+}
+
+function drawEllipseShape(ctx, shape, s, markerSize = MARKER_RADIUS) {
   if (!shape || shape.rx <= 0 || shape.ry <= 0) return;
   ctx.beginPath();
   ctx.ellipse(shape.cx * s, shape.cy * s, shape.rx * s, shape.ry * s, 0, 0, Math.PI * 2);
   ctx.fillStyle = "transparent";
   ctx.fill();
   ctx.strokeStyle = "#111";
-  ctx.lineWidth = 4; // 화면 기준 고정 두께
+  ctx.lineWidth = ellipseStrokeWidth(markerSize);
   ctx.stroke();
 }
 
@@ -88,12 +93,12 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shape
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.restore();
 
-  // 원/타원 (마커와 분리, 번호 없음)
+  // 원/타원 (마커와 분리, 번호 없음) — 테두리 두께는 markerSize에 비례
   shapes.forEach(shape => {
-    drawEllipseShape(ctx, shape, s);
+    drawEllipseShape(ctx, shape, s, markerSize);
     if (showHandles) drawShapeHandles(ctx, shape, s);
   });
-  if (previewShape) drawEllipseShape(ctx, previewShape, s);
+  if (previewShape) drawEllipseShape(ctx, previewShape, s, markerSize);
   // 두 번 클릭 그리기: 중심점 표시
   if (ellipseCenter) {
     ctx.beginPath();
@@ -948,11 +953,15 @@ export default function App() {
             </button>
           </div>
 
-          {/* 마커 크기 슬라이더 */}
+          {/* 홀드 모드: 마커 크기 / 원형 모드: 테두리 두께 */}
           <div style={{ display:"flex", alignItems:"center", gap:8, padding:"4px 12px", background:"#111", borderBottom:"1px solid #1a1a1a", flexShrink:0, zIndex:200 }}>
-            <span style={{ fontSize:11, color:"#666", whiteSpace:"nowrap" }}>마커 크기</span>
+            <span style={{ fontSize:11, color:"#666", whiteSpace:"nowrap" }}>
+              {mode === "ellipse" ? "테두리 두께" : "마커 크기"}
+            </span>
             <input type="range" min={8} max={24} value={markerSize} onChange={e => setMarkerSize(Number(e.target.value))} style={{ flex:1 }} />
-            <span style={{ fontSize:11, color:"#888", width:20 }}>{markerSize}</span>
+            <span style={{ fontSize:11, color:"#888", width:28 }}>
+              {mode === "ellipse" ? Math.round(ellipseStrokeWidth(markerSize)) : markerSize}
+            </span>
           </div>
 
           {/* 안내 + 취소 버튼 */}
