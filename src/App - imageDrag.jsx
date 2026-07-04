@@ -97,7 +97,6 @@ export default function App() {
   const [markers, setMarkers] = useState([]);
   const [nextHoldNumber, setNextHoldNumber] = useState(1);
   const [mode, setMode] = useState("hold");
-  const [lockNumber, setLockNumber] = useState(false);
   const [history, setHistory] = useState([]);
   const [scale, setScale] = useState(1);
   const [markerSize, setMarkerSize] = useState(14);
@@ -277,9 +276,8 @@ export default function App() {
     const marker = { id: Date.now(), x, y, type: mode, label, number };
     setHistory(prev => [...prev, snapshot]);
     setMarkers(prev => [...prev, marker]);
-    // 홀드 + 번호 고정 OFF일 때만 번호 자동 증가
-    if (mode === "hold" && !lockNumber) setNextHoldNumber(n => n + 1);
-  }, [image, clientToImageCoords, mode, lockNumber, makeSnapshot]);
+    if (mode === "hold") setNextHoldNumber(n => n + 1);
+  }, [image, clientToImageCoords, mode, makeSnapshot]);
 
   const beginPointerDrag = useCallback((clientX, clientY) => {
     const hit = findMarkerAt(clientX, clientY);
@@ -635,29 +633,6 @@ export default function App() {
                 {btn.label}
               </button>
             ))}
-            <button
-              onClick={() => {
-                if (lockNumber) {
-                  // 고정 해제 시 현재 최대 번호 + 1로 맞춤
-                  setNextHoldNumber(getNextNumberFromLabels(markersRef.current));
-                }
-                setLockNumber(v => !v);
-              }}
-              style={{
-                flexShrink: 0,
-                padding: "6px 12px",
-                borderRadius: 8,
-                fontSize: 12,
-                fontWeight: "bold",
-                cursor: "pointer",
-                border: lockNumber ? "2px solid #fca5a5" : "2px solid transparent",
-                background: lockNumber ? "#dc2626" : "#333",
-                color: "white",
-                opacity: lockNumber ? 1 : 0.55,
-              }}
-            >
-              🔒 번호 고정
-            </button>
           </div>
 
           {/* 마커 크기 슬라이더 */}
@@ -675,7 +650,7 @@ export default function App() {
                mode==="start" ? "START 홀드 클릭" :
                mode==="top" ? "TOP 홀드 클릭" :
                mode==="clip" ? `클립 C${markers.filter(m=>m.type==="clip").length+1} 위치 클릭` :
-               `다음 홀드: #${nextNum}${lockNumber ? " (번호 고정)" : ""}${!hasStart ? " (START 먼저 찍으면 1번부터)" : ""}`}
+               `다음 홀드: #${nextNum}${!hasStart ? " (START 먼저 찍으면 1번부터)" : ""}`}
             </span>
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
               {Math.abs(zoom - FIT_ZOOM) > 0.001 && (

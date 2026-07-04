@@ -97,7 +97,6 @@ export default function App() {
   const [markers, setMarkers] = useState([]);
   const [nextHoldNumber, setNextHoldNumber] = useState(1);
   const [mode, setMode] = useState("hold");
-  const [lockNumber, setLockNumber] = useState(false);
   const [history, setHistory] = useState([]);
   const [scale, setScale] = useState(1);
   const [markerSize, setMarkerSize] = useState(14);
@@ -110,10 +109,8 @@ export default function App() {
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
 
-  // 최신 상태를 터치/마우스 핸들러에서 동기적으로 참조
+  // 최신 zoom/pan을 터치/마우스 핸들러에서 동기적으로 참조
   const transformRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
-  const markersRef = useRef(markers);
-  const nextHoldNumberRef = useRef(nextHoldNumber);
   const pinchRef = useRef(null);
   const tapRef = useRef(null);
   const mouseDragRef = useRef(null);
@@ -122,14 +119,6 @@ export default function App() {
   useEffect(() => {
     transformRef.current = { zoom, pan };
   }, [zoom, pan]);
-
-  useEffect(() => {
-    markersRef.current = markers;
-  }, [markers]);
-
-  useEffect(() => {
-    nextHoldNumberRef.current = nextHoldNumber;
-  }, [nextHoldNumber]);
 
   // 원본 fit-to-screen 크기로 복귀
   const resetTransform = useCallback(() => {
@@ -200,10 +189,7 @@ export default function App() {
     return () => window.removeEventListener("resize", handleContainerResize);
   }, [handleContainerResize]);
 
-  const makeSnapshot = useCallback(() => ({
-    markers: markersRef.current.map(m => ({ ...m })),
-    nextHoldNumber: nextHoldNumberRef.current,
-  }), []);
+  const makeSnapshot = () => ({ markers: [...markers], nextHoldNumber });
 
   // getBoundingClientRect()는 CSS transform(핀치줌) 반영 → 확대 상태에서도 동일 공식으로 정확
   const clientToImageCoords = useCallback((clientX, clientY) => {
@@ -221,28 +207,6 @@ export default function App() {
     return { x, y };
   }, [imgSize]);
 
-  // MARKER_RADIUS 안의 마커 히트 (나중에 그린 마커가 우선)
-  const findMarkerAt = useCallback((clientX, clientY) => {
-    const coords = clientToImageCoords(clientX, clientY);
-    if (!coords) return null;
-    const list = markersRef.current;
-    for (let i = list.length - 1; i >= 0; i--) {
-      const m = list[i];
-      if (Math.hypot(coords.x - m.x, coords.y - m.y) <= MARKER_RADIUS) return m;
-    }
-    return null;
-  }, [clientToImageCoords]);
-
-  const moveMarkerTo = useCallback((markerId, clientX, clientY, offsetX = 0, offsetY = 0) => {
-    const coords = clientToImageCoords(clientX, clientY);
-    if (!coords) return;
-    const x = coords.x + offsetX;
-    const y = coords.y + offsetY;
-    setMarkers(prev => prev.map(m =>
-      m.id === markerId ? { ...m, x, y } : m
-    ));
-  }, [clientToImageCoords]);
-
   const placeMarkerAt = useCallback((clientX, clientY) => {
     if (!image) return;
     const coords = clientToImageCoords(clientX, clientY);
@@ -250,11 +214,10 @@ export default function App() {
     const { x, y } = coords;
 
     const snapshot = makeSnapshot();
-    const currentMarkers = markersRef.current;
-    const nHold = nextHoldNumberRef.current;
 
     if (mode === "duo") {
-      const marker = { id: Date.now(), x, y, type: "duo", label: `${nHold}/${nHold+1}`, number: nHold };
+      const n = nextHoldNumber;
+      const marker = { id: Date.now(), x, y, type: "duo", label: `${n}/${n+1}`, number: n };
       setHistory(prev => [...prev, snapshot]);
       setMarkers(prev => [...prev, marker]);
       setNextHoldNumber(prev => prev + 2);
@@ -263,53 +226,33 @@ export default function App() {
 
     let label, number;
     if (mode === "clip") {
-      const cnt = currentMarkers.filter(m => m.type === "clip").length + 1;
+      const cnt = markers.filter(m => m.type === "clip").length + 1;
       label = `C${cnt}`; number = cnt;
     } else if (mode === "top") {
       label = "TOP"; number = 0;
     } else if (mode === "start") {
       label = "START"; number = 0;
     } else {
-      number = nHold;
+      number = nextHoldNumber;
       label = String(number);
     }
 
     const marker = { id: Date.now(), x, y, type: mode, label, number };
     setHistory(prev => [...prev, snapshot]);
     setMarkers(prev => [...prev, marker]);
-    // 홀드 + 번호 고정 OFF일 때만 번호 자동 증가
-    if (mode === "hold" && !lockNumber) setNextHoldNumber(n => n + 1);
-  }, [image, clientToImageCoords, mode, lockNumber, makeSnapshot]);
-
-  const beginPointerDrag = useCallback((clientX, clientY) => {
-    const hit = findMarkerAt(clientX, clientY);
-    if (hit) {
-      const coords = clientToImageCoords(clientX, clientY);
-      return {
-        type: "marker",
-        markerId: hit.id,
-        startX: clientX,
-        startY: clientY,
-        offsetX: coords ? hit.x - coords.x : 0,
-        offsetY: coords ? hit.y - coords.y : 0,
-        moved: false,
-        snapshot: makeSnapshot(),
-      };
-    }
-    const { pan: p } = transformRef.current;
-    return {
-      type: "pan",
-      startX: clientX,
-      startY: clientY,
-      startPan: { ...p },
-      moved: false,
-    };
-  }, [findMarkerAt, makeSnapshot, clientToImageCoords]);
+    if (mode === "hold") setNextHoldNumber(n => n + 1);
+  }, [image, clientToImageCoords, mode, nextHoldNumber, markers]);
 
   const handleMouseDown = (e) => {
     if (!image || e.button !== 0) return;
     e.preventDefault();
-    mouseDragRef.current = beginPointerDrag(e.clientX, e.clientY);
+    const { pan: p } = transformRef.current;
+    mouseDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startPan: { ...p },
+      moved: false,
+    };
   };
 
   // 커서 위치를 기준으로 사진 영역만 줌 (상단 메뉴는 영향 없음)
@@ -348,11 +291,7 @@ export default function App() {
         setIsDragging(true);
       }
 
-      if (!drag.moved) return;
-
-      if (drag.type === "marker") {
-        moveMarkerTo(drag.markerId, e.clientX, e.clientY, drag.offsetX, drag.offsetY);
-      } else if (drag.type === "pan") {
+      if (drag.moved) {
         const newPan = {
           x: drag.startPan.x + dx,
           y: drag.startPan.y + dy,
@@ -368,15 +307,7 @@ export default function App() {
       mouseDragRef.current = null;
       setIsDragging(false);
 
-      if (drag.type === "marker") {
-        // 마커 이동 완료 → undo 히스토리 추가
-        if (drag.moved) {
-          setHistory(prev => [...prev, drag.snapshot]);
-        }
-        return;
-      }
-
-      // 빈 공간: 5px 미만 → 새 마커, 이상 → 사진 pan만
+      // 5px 미만 이동 → 클릭(마커), 이상 → 드래그(이동만)
       if (!drag.moved) {
         placeMarkerAt(e.clientX, e.clientY);
       }
@@ -388,7 +319,7 @@ export default function App() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [placeMarkerAt, moveMarkerTo]);
+  }, [placeMarkerAt]);
 
   // 브라우저 페이지 줌(Ctrl+휠/트랙패드 핀치)이 메뉴까지 축소하지 않도록 차단
   useEffect(() => {
@@ -428,7 +359,6 @@ export default function App() {
       startMid: getTouchMidpoint(t1, t2),
     };
     tapRef.current = null;
-    setIsDragging(false);
   };
 
   const applyPinch = (t1, t2) => {
@@ -469,7 +399,12 @@ export default function App() {
 
     if (e.touches.length === 1 && !pinchRef.current) {
       const t = e.touches[0];
-      tapRef.current = beginPointerDrag(t.clientX, t.clientY);
+      tapRef.current = {
+        x: t.clientX,
+        y: t.clientY,
+        moved: false,
+        suppressClick: false,
+      };
     }
   };
 
@@ -483,29 +418,12 @@ export default function App() {
       return;
     }
 
-    const drag = tapRef.current;
-    if (e.touches.length === 1 && drag && !pinchRef.current) {
-      e.preventDefault();
+    if (e.touches.length === 1 && tapRef.current && !pinchRef.current) {
       const t = e.touches[0];
-      const dx = t.clientX - drag.startX;
-      const dy = t.clientY - drag.startY;
-
-      if (!drag.moved && Math.hypot(dx, dy) > TAP_MOVE_THRESHOLD) {
-        drag.moved = true;
-        setIsDragging(true);
-      }
-
-      if (!drag.moved) return;
-
-      if (drag.type === "marker") {
-        moveMarkerTo(drag.markerId, t.clientX, t.clientY, drag.offsetX, drag.offsetY);
-      } else if (drag.type === "pan") {
-        const newPan = {
-          x: drag.startPan.x + dx,
-          y: drag.startPan.y + dy,
-        };
-        transformRef.current = { ...transformRef.current, pan: newPan };
-        setPan(newPan);
+      const dx = t.clientX - tapRef.current.x;
+      const dy = t.clientY - tapRef.current.y;
+      if (Math.hypot(dx, dy) > TAP_MOVE_THRESHOLD) {
+        tapRef.current.moved = true;
       }
     }
   };
@@ -518,27 +436,17 @@ export default function App() {
       e.preventDefault();
       if (e.touches.length < 2) {
         pinchRef.current = null;
-        tapRef.current = null;
-        setIsDragging(false);
+        tapRef.current = { suppressClick: true, moved: true };
       }
       return;
     }
 
+    // 한 손가락 탭 → 마커 배치
     if (tapRef.current && e.changedTouches.length === 1 && e.touches.length === 0) {
-      const drag = tapRef.current;
-      tapRef.current = null;
-      setIsDragging(false);
-      e.preventDefault();
-
-      if (drag.type === "marker") {
-        if (drag.moved) {
-          setHistory(prev => [...prev, drag.snapshot]);
-        }
-        return;
-      }
-
-      // 빈 공간 탭 → 새 마커, 드래그 → 사진 pan만
-      if (!drag.moved) {
+      const tap = tapRef.current;
+      tapRef.current = { suppressClick: true };
+      if (!tap.moved) {
+        e.preventDefault();
         const t = e.changedTouches[0];
         placeMarkerAt(t.clientX, t.clientY);
       }
@@ -635,29 +543,6 @@ export default function App() {
                 {btn.label}
               </button>
             ))}
-            <button
-              onClick={() => {
-                if (lockNumber) {
-                  // 고정 해제 시 현재 최대 번호 + 1로 맞춤
-                  setNextHoldNumber(getNextNumberFromLabels(markersRef.current));
-                }
-                setLockNumber(v => !v);
-              }}
-              style={{
-                flexShrink: 0,
-                padding: "6px 12px",
-                borderRadius: 8,
-                fontSize: 12,
-                fontWeight: "bold",
-                cursor: "pointer",
-                border: lockNumber ? "2px solid #fca5a5" : "2px solid transparent",
-                background: lockNumber ? "#dc2626" : "#333",
-                color: "white",
-                opacity: lockNumber ? 1 : 0.55,
-              }}
-            >
-              🔒 번호 고정
-            </button>
           </div>
 
           {/* 마커 크기 슬라이더 */}
@@ -675,7 +560,7 @@ export default function App() {
                mode==="start" ? "START 홀드 클릭" :
                mode==="top" ? "TOP 홀드 클릭" :
                mode==="clip" ? `클립 C${markers.filter(m=>m.type==="clip").length+1} 위치 클릭` :
-               `다음 홀드: #${nextNum}${lockNumber ? " (번호 고정)" : ""}${!hasStart ? " (START 먼저 찍으면 1번부터)" : ""}`}
+               `다음 홀드: #${nextNum}${!hasStart ? " (START 먼저 찍으면 1번부터)" : ""}`}
             </span>
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
               {Math.abs(zoom - FIT_ZOOM) > 0.001 && (
