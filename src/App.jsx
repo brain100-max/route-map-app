@@ -323,8 +323,13 @@ export default function App() {
               <canvas ref={canvasRef}
                 width={imgSize.w * scale} height={imgSize.h * scale}
                 onClick={handleCanvasClick}
-                onTouchStart={e => { e.preventDefault(); handleCanvasClick(e); }}
-                style={{ position:"absolute", top:0, left:0, width: imgSize.w * scale, height: imgSize.h * scale, touchAction:"none" }} />
+                onTouchStart={e => {
+                  if (e.touches.length === 1) {
+                    e.preventDefault();
+                    handleCanvasClick(e);
+                  }
+                }}
+                style={{ position:"absolute", top:0, left:0, width: imgSize.w * scale, height: imgSize.h * scale, touchAction:"pan-x pan-y pinch-zoom" }} />
             </>
           )}
         </div>
