@@ -2,9 +2,11 @@ import { useState, useRef, useEffect, useCallback } from "react";
 
 const MARKER_RADIUS = 14;
 const FONT_SIZE = 13;
-const MIN_ZOOM = 1;
+const MIN_ZOOM = 0.3;
+const FIT_ZOOM = 1;
 const MAX_ZOOM = 5;
 const TAP_MOVE_THRESHOLD = 10;
+const MOUSE_DRAG_THRESHOLD = 5;
 
 const COLORS = {
   hold:  { fill: "rgba(255,255,255,0.85)", stroke: "white",   text: "#111" },
@@ -14,14 +16,25 @@ const COLORS = {
   duo:   { fill: "rgba(255,255,255,0.85)", stroke: "#f472b6", text: "#111" },
 };
 
-function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS) {
-  const r = markerSize * scale;
-  const fs = FONT_SIZE * scale;
+function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1) {
+  // scale: CSS 표시 배율, dpr: devicePixelRatio
+  // ctx.scale(dpr)가 이미 적용된 경우 dpr=1, 미적용 시 dpr를 scale에 곱함
+  const s = scale * dpr;
+  // 마커 슬라이더에 동그라미·숫자 모두 비례
+  const sizeRatio = markerSize / MARKER_RADIUS;
+  const r = markerSize * s;
+  const fs = FONT_SIZE * sizeRatio * s;
+  const lw = 2 * sizeRatio * s;
+
+  // transform과 무관하게 전체 픽셀 버퍼를 클리어
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.restore();
 
   markers.forEach(m => {
-    const x = m.x * scale;
-    const y = m.y * scale;
+    const x = m.x * s;
+    const y = m.y * s;
     const c = COLORS[m.type] || COLORS.hold;
 
     ctx.font = `bold ${fs}px sans-serif`;
@@ -29,9 +42,9 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS) {
     if (m.type === "top" || m.type === "start") {
       const text = m.type === "top" ? "TOP" : "START";
       const tw = ctx.measureText(text).width;
-      const pad = 7 * scale;
+      const pad = 7 * sizeRatio * s;
       const bw = tw + pad * 2, bh = fs + pad * 1.4;
-      const rx2 = bw / 2, ry2 = bh / 2, rad = 8 * scale;
+      const rx2 = bw / 2, ry2 = bh / 2, rad = 8 * sizeRatio * s;
       ctx.beginPath();
       ctx.moveTo(x - rx2 + rad, y - ry2);
       ctx.arcTo(x + rx2, y - ry2, x + rx2, y + ry2, rad);
@@ -42,7 +55,7 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS) {
       ctx.fillStyle = c.fill;
       ctx.fill();
       ctx.strokeStyle = c.stroke;
-      ctx.lineWidth = 2 * scale;
+      ctx.lineWidth = lw;
       ctx.stroke();
       ctx.fillStyle = c.text;
       ctx.textAlign = "center";
@@ -55,7 +68,7 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS) {
       ctx.fillStyle = c.fill;
       ctx.fill();
       ctx.strokeStyle = m.type === "duo" ? "#f472b6" : c.stroke;
-      ctx.lineWidth = 2 * scale;
+      ctx.lineWidth = lw;
       ctx.stroke();
       ctx.fillStyle = c.text;
       ctx.textAlign = "center";
@@ -96,21 +109,26 @@ export default function App() {
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
 
-  // 최신 zoom/pan을 터치 핸들러에서 동기적으로 참조
+  // 최신 zoom/pan을 터치/마우스 핸들러에서 동기적으로 참조
   const transformRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
   const pinchRef = useRef(null);
   const tapRef = useRef(null);
+  const mouseDragRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     transformRef.current = { zoom, pan };
   }, [zoom, pan]);
 
+  // 원본 fit-to-screen 크기로 복귀
   const resetTransform = useCallback(() => {
-    setZoom(1);
+    setZoom(FIT_ZOOM);
     setPan({ x: 0, y: 0 });
-    transformRef.current = { zoom: 1, pan: { x: 0, y: 0 } };
+    transformRef.current = { zoom: FIT_ZOOM, pan: { x: 0, y: 0 } };
     pinchRef.current = null;
     tapRef.current = null;
+    mouseDragRef.current = null;
+    setIsDragging(false);
   }, []);
 
   const getNextNumberFromLabels = useCallback((markerList) => {
@@ -127,9 +145,21 @@ export default function App() {
 
   useEffect(() => {
     if (!canvasRef.current || !image) return;
-    const ctx = canvasRef.current.getContext("2d");
+    const canvas = canvasRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    const displayW = imgSize.w * scale;
+    const displayH = imgSize.h * scale;
+
+    // 1) 백킹 스토어를 devicePixelRatio 배율로 설정
+    canvas.width = Math.round(displayW * dpr);
+    canvas.height = Math.round(displayH * dpr);
+
+    const ctx = canvas.getContext("2d");
+    // 2) CSS 픽셀 좌표로 그리도록 dpr 스케일 적용
+    ctx.scale(dpr, dpr);
+    // 3) drawAll은 CSS scale로 그림 (ctx.scale이 dpr 반영)
     drawAll(ctx, markers, scale, markerSize);
-  }, [markers, scale, image, markerSize]);
+  }, [markers, scale, image, markerSize, imgSize]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -213,14 +243,112 @@ export default function App() {
     if (mode === "hold") setNextHoldNumber(n => n + 1);
   }, [image, clientToImageCoords, mode, nextHoldNumber, markers]);
 
-  const handleCanvasClick = (e) => {
-    // 터치 후 발생하는 ghost click 무시
-    if (tapRef.current?.suppressClick) {
-      tapRef.current.suppressClick = false;
-      return;
-    }
-    placeMarkerAt(e.clientX, e.clientY);
+  const handleMouseDown = (e) => {
+    if (!image || e.button !== 0) return;
+    e.preventDefault();
+    const { pan: p } = transformRef.current;
+    mouseDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startPan: { ...p },
+      moved: false,
+    };
   };
+
+  // 커서 위치를 기준으로 사진 영역만 줌 (상단 메뉴는 영향 없음)
+  const zoomAtPoint = useCallback((clientX, clientY, nextZoom) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const { zoom: z, pan: p } = transformRef.current;
+    let newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));
+
+    const viewportRect = viewport.getBoundingClientRect();
+    const mx = clientX - viewportRect.left;
+    const my = clientY - viewportRect.top;
+
+    const contentX = (mx - p.x) / z;
+    const contentY = (my - p.y) / z;
+    const newPanX = mx - contentX * newZoom;
+    const newPanY = my - contentY * newZoom;
+
+    transformRef.current = { zoom: newZoom, pan: { x: newPanX, y: newPanY } };
+    setZoom(newZoom);
+    setPan({ x: newPanX, y: newPanY });
+  }, []);
+
+  // 뷰포트 밖으로 나가도 드래그가 끊기지 않도록 window에 연결
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      const drag = mouseDragRef.current;
+      if (!drag) return;
+
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
+
+      if (!drag.moved && Math.hypot(dx, dy) >= MOUSE_DRAG_THRESHOLD) {
+        drag.moved = true;
+        setIsDragging(true);
+      }
+
+      if (drag.moved) {
+        const newPan = {
+          x: drag.startPan.x + dx,
+          y: drag.startPan.y + dy,
+        };
+        transformRef.current = { ...transformRef.current, pan: newPan };
+        setPan(newPan);
+      }
+    };
+
+    const handleMouseUp = (e) => {
+      const drag = mouseDragRef.current;
+      if (!drag) return;
+      mouseDragRef.current = null;
+      setIsDragging(false);
+
+      // 5px 미만 이동 → 클릭(마커), 이상 → 드래그(이동만)
+      if (!drag.moved) {
+        placeMarkerAt(e.clientX, e.clientY);
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [placeMarkerAt]);
+
+  // 브라우저 페이지 줌(Ctrl+휠/트랙패드 핀치)이 메뉴까지 축소하지 않도록 차단
+  useEffect(() => {
+    const preventPageZoom = (e) => {
+      if (e.ctrlKey) e.preventDefault();
+    };
+    document.addEventListener("wheel", preventPageZoom, { passive: false });
+    return () => document.removeEventListener("wheel", preventPageZoom);
+  }, []);
+
+  // 마우스 휠/트랙패드 핀치 → 사진 영역만 줌 (상단 메뉴는 고정)
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || !image) return;
+
+    const handleWheel = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const { zoom: z } = transformRef.current;
+      // ctrlKey: 트랙패드 핀치 / Ctrl+휠
+      const intensity = e.ctrlKey ? 0.01 : 0.0015;
+      const factor = Math.exp(-e.deltaY * intensity);
+      zoomAtPoint(e.clientX, e.clientY, z * factor);
+    };
+
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, [image, zoomAtPoint]);
 
   const beginPinch = (t1, t2) => {
     const { zoom: z, pan: p } = transformRef.current;
@@ -252,14 +380,8 @@ export default function App() {
     // 핀치 시작 시점의 콘텐츠 좌표를 현재 중점 아래에 유지
     const contentX = (startMx - pinch.startPan.x) / pinch.startZoom;
     const contentY = (startMy - pinch.startPan.y) / pinch.startZoom;
-    let newPanX = mx - contentX * newZoom;
-    let newPanY = my - contentY * newZoom;
-
-    if (newZoom <= MIN_ZOOM) {
-      newZoom = MIN_ZOOM;
-      newPanX = 0;
-      newPanY = 0;
-    }
+    const newPanX = mx - contentX * newZoom;
+    const newPanY = my - contentY * newZoom;
 
     transformRef.current = { zoom: newZoom, pan: { x: newPanX, y: newPanY } };
     setZoom(newZoom);
@@ -441,7 +563,7 @@ export default function App() {
                `다음 홀드: #${nextNum}${!hasStart ? " (START 먼저 찍으면 1번부터)" : ""}`}
             </span>
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-              {zoom > 1 && (
+              {Math.abs(zoom - FIT_ZOOM) > 0.001 && (
                 <button onClick={resetTransform}
                   style={{ fontSize:11, padding:"3px 8px", borderRadius:6, border:"none", background:"#333", color:"#93c5fd", cursor:"pointer" }}>
                   줌 리셋
@@ -467,12 +589,13 @@ export default function App() {
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             onTouchCancel={handleTouchEnd}
+            onMouseDown={handleMouseDown}
             style={{
               flex: 1,
               minHeight: 0,
               position: "relative",
               background: "#0a0a0f",
-              cursor: "crosshair",
+              cursor: isDragging ? "grabbing" : "crosshair",
               overflow: "hidden",
               touchAction: "none",
               WebkitUserSelect: "none",
@@ -501,9 +624,6 @@ export default function App() {
                   draggable={false}
                   style={{ width: displayW, height: displayH, display:"block", pointerEvents:"none" }} />
                 <canvas ref={canvasRef}
-                  width={displayW}
-                  height={displayH}
-                  onClick={handleCanvasClick}
                   style={{
                     position: "absolute",
                     top: 0,
