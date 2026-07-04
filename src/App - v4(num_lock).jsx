@@ -7,8 +7,6 @@ const FIT_ZOOM = 1;
 const MAX_ZOOM = 5;
 const TAP_MOVE_THRESHOLD = 10;
 const MOUSE_DRAG_THRESHOLD = 5;
-const MIN_SHAPE_RADIUS = 4;
-const HANDLE_SCREEN_RADIUS = 5;
 
 const COLORS = {
   hold:  { fill: "rgba(255,255,255,0.85)", stroke: "white",   text: "#111" },
@@ -18,61 +16,7 @@ const COLORS = {
   duo:   { fill: "rgba(255,255,255,0.85)", stroke: "#f472b6", text: "#111" },
 };
 
-// 시작점 = 중심, 드래그 위치 = 가장자리 → 중심으로 다시 끌면 축소됨
-function ellipseFromDrag(cx, cy, x1, y1, lockCircle = false) {
-  let rx = Math.abs(x1 - cx);
-  let ry = Math.abs(y1 - cy);
-  if (lockCircle) {
-    const r = Math.max(rx, ry);
-    rx = r;
-    ry = r;
-  }
-  return { cx, cy, rx, ry };
-}
-
-function pointInEllipse(px, py, shape, pad = 0) {
-  const rx = shape.rx + pad;
-  const ry = shape.ry + pad;
-  if (rx <= 0 || ry <= 0) return false;
-  const nx = (px - shape.cx) / rx;
-  const ny = (py - shape.cy) / ry;
-  return nx * nx + ny * ny <= 1;
-}
-
-function getShapeHandles(shape) {
-  const { cx, cy, rx, ry } = shape;
-  return [
-    { id: "n", x: cx, y: cy - ry },
-    { id: "e", x: cx + rx, y: cy },
-    { id: "s", x: cx, y: cy + ry },
-    { id: "w", x: cx - rx, y: cy },
-  ];
-}
-
-function drawEllipseShape(ctx, shape, s) {
-  if (!shape || shape.rx <= 0 || shape.ry <= 0) return;
-  ctx.beginPath();
-  ctx.ellipse(shape.cx * s, shape.cy * s, shape.rx * s, shape.ry * s, 0, 0, Math.PI * 2);
-  ctx.fillStyle = "transparent";
-  ctx.fill();
-  ctx.strokeStyle = "#111";
-  ctx.lineWidth = 4; // 화면 기준 고정 두께
-  ctx.stroke();
-}
-
-function drawShapeHandles(ctx, shape, s) {
-  getShapeHandles(shape).forEach(h => {
-    ctx.beginPath();
-    ctx.arc(h.x * s, h.y * s, HANDLE_SCREEN_RADIUS, 0, Math.PI * 2);
-    ctx.fillStyle = "#fff";
-    ctx.fill();
-    ctx.strokeStyle = "#111";
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  });
-}
-
-function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shapes = [], previewShape = null, showHandles = false, ellipseCenter = null) {
+function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1) {
   // scale: CSS 표시 배율, dpr: devicePixelRatio
   // ctx.scale(dpr)가 이미 적용된 경우 dpr=1, 미적용 시 dpr를 scale에 곱함
   const s = scale * dpr;
@@ -87,23 +31,6 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shape
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.restore();
-
-  // 원/타원 (마커와 분리, 번호 없음)
-  shapes.forEach(shape => {
-    drawEllipseShape(ctx, shape, s);
-    if (showHandles) drawShapeHandles(ctx, shape, s);
-  });
-  if (previewShape) drawEllipseShape(ctx, previewShape, s);
-  // 두 번 클릭 그리기: 중심점 표시
-  if (ellipseCenter) {
-    ctx.beginPath();
-    ctx.arc(ellipseCenter.x * s, ellipseCenter.y * s, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#111";
-    ctx.fill();
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  }
 
   markers.forEach(m => {
     const x = m.x * s;
@@ -168,9 +95,6 @@ export default function App() {
   const [image, setImage] = useState(null);
   const [imgSize, setImgSize] = useState({ w: 1, h: 1 });
   const [markers, setMarkers] = useState([]);
-  const [shapes, setShapes] = useState([]);
-  const [previewShape, setPreviewShape] = useState(null);
-  const [ellipseCenter, setEllipseCenter] = useState(null); // 두 번 클릭 그리기: 중심점
   const [nextHoldNumber, setNextHoldNumber] = useState(1);
   const [mode, setMode] = useState("hold");
   const [lockNumber, setLockNumber] = useState(false);
@@ -189,10 +113,7 @@ export default function App() {
   // 최신 상태를 터치/마우스 핸들러에서 동기적으로 참조
   const transformRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
   const markersRef = useRef(markers);
-  const shapesRef = useRef(shapes);
   const nextHoldNumberRef = useRef(nextHoldNumber);
-  const modeRef = useRef(mode);
-  const ellipseCenterRef = useRef(null);
   const pinchRef = useRef(null);
   const tapRef = useRef(null);
   const mouseDragRef = useRef(null);
@@ -207,57 +128,8 @@ export default function App() {
   }, [markers]);
 
   useEffect(() => {
-    shapesRef.current = shapes;
-  }, [shapes]);
-
-  useEffect(() => {
     nextHoldNumberRef.current = nextHoldNumber;
   }, [nextHoldNumber]);
-
-  useEffect(() => {
-    modeRef.current = mode;
-  }, [mode]);
-
-  useEffect(() => {
-    ellipseCenterRef.current = ellipseCenter;
-  }, [ellipseCenter]);
-
-  // 원형 모드 이탈 시 미완성 그리기 취소
-  useEffect(() => {
-    if (mode !== "ellipse") {
-      setEllipseCenter(null);
-      setPreviewShape(null);
-    }
-  }, [mode]);
-
-  // 중심 지정 후 커서 위치로 미리보기
-  useEffect(() => {
-    if (mode !== "ellipse" || !ellipseCenter) return;
-
-    const updatePreview = (clientX, clientY, lockCircle) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      const x = (clientX - rect.left) / rect.width * imgSize.w;
-      const y = (clientY - rect.top) / rect.height * imgSize.h;
-      setPreviewShape(ellipseFromDrag(ellipseCenter.x, ellipseCenter.y, x, y, lockCircle));
-    };
-
-    const onMouseMove = (e) => updatePreview(e.clientX, e.clientY, e.shiftKey);
-    const onTouchMove = (e) => {
-      if (e.touches.length === 1) {
-        updatePreview(e.touches[0].clientX, e.touches[0].clientY, false);
-      }
-    };
-
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("touchmove", onTouchMove, { passive: true });
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("touchmove", onTouchMove);
-    };
-  }, [mode, ellipseCenter, imgSize]);
 
   // 원본 fit-to-screen 크기로 복귀
   const resetTransform = useCallback(() => {
@@ -267,7 +139,6 @@ export default function App() {
     pinchRef.current = null;
     tapRef.current = null;
     mouseDragRef.current = null;
-    setPreviewShape(null);
     setIsDragging(false);
   }, []);
 
@@ -298,9 +169,8 @@ export default function App() {
     // 2) CSS 픽셀 좌표로 그리도록 dpr 스케일 적용
     ctx.scale(dpr, dpr);
     // 3) drawAll은 CSS scale로 그림 (ctx.scale이 dpr 반영)
-    // 핸들은 원형 모드에서만 표시
-    drawAll(ctx, markers, scale, markerSize, 1, shapes, previewShape, mode === "ellipse", ellipseCenter);
-  }, [markers, shapes, previewShape, ellipseCenter, scale, image, markerSize, imgSize, mode]);
+    drawAll(ctx, markers, scale, markerSize);
+  }, [markers, scale, image, markerSize, imgSize]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -311,9 +181,6 @@ export default function App() {
       setImgSize({ w: img.naturalWidth, h: img.naturalHeight });
       setImage(url);
       setMarkers([]);
-      setShapes([]);
-      setPreviewShape(null);
-      setEllipseCenter(null);
       setHistory([]);
       setNextHoldNumber(1);
       resetTransform();
@@ -335,22 +202,18 @@ export default function App() {
 
   const makeSnapshot = useCallback(() => ({
     markers: markersRef.current.map(m => ({ ...m })),
-    shapes: shapesRef.current.map(s => ({ ...s })),
     nextHoldNumber: nextHoldNumberRef.current,
   }), []);
 
   // getBoundingClientRect()는 CSS transform(핀치줌) 반영 → 확대 상태에서도 동일 공식으로 정확
-  // allowOutside: 원 그리기 중 캔버스 밖으로 나가도 좌표 갱신(축소 가능하도록)
-  const clientToImageCoords = useCallback((clientX, clientY, allowOutside = false) => {
+  const clientToImageCoords = useCallback((clientX, clientY) => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
     if (
-      !allowOutside && (
-        clientX < rect.left || clientX > rect.right ||
-        clientY < rect.top || clientY > rect.bottom
-      )
+      clientX < rect.left || clientX > rect.right ||
+      clientY < rect.top || clientY > rect.bottom
     ) return null;
 
     const x = (clientX - rect.left) / rect.width * imgSize.w;
@@ -370,42 +233,6 @@ export default function App() {
     return null;
   }, [clientToImageCoords]);
 
-  // 원/타원 히트 (내부 또는 테두리 근처)
-  const findShapeAt = useCallback((clientX, clientY) => {
-    const coords = clientToImageCoords(clientX, clientY);
-    if (!coords) return null;
-    const pad = MARKER_RADIUS;
-    const list = shapesRef.current;
-    for (let i = list.length - 1; i >= 0; i--) {
-      const shape = list[i];
-      if (pointInEllipse(coords.x, coords.y, shape, pad)) return shape;
-    }
-    return null;
-  }, [clientToImageCoords]);
-
-  // 테두리 핸들 히트 (상·하·좌·우)
-  const findHandleAt = useCallback((clientX, clientY) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-    const rect = canvas.getBoundingClientRect();
-    if (rect.width <= 0) return null;
-    // 화면 ~12px 반경을 이미지 좌표로 변환
-    const hitR = (12 / rect.width) * imgSize.w;
-    const coords = clientToImageCoords(clientX, clientY, true);
-    if (!coords) return null;
-
-    const list = shapesRef.current;
-    for (let i = list.length - 1; i >= 0; i--) {
-      const shape = list[i];
-      for (const h of getShapeHandles(shape)) {
-        if (Math.hypot(coords.x - h.x, coords.y - h.y) <= hitR) {
-          return { shapeId: shape.id, handleId: h.id, origin: { cx: shape.cx, cy: shape.cy, rx: shape.rx, ry: shape.ry } };
-        }
-      }
-    }
-    return null;
-  }, [clientToImageCoords, imgSize.w]);
-
   const moveMarkerTo = useCallback((markerId, clientX, clientY, offsetX = 0, offsetY = 0) => {
     const coords = clientToImageCoords(clientX, clientY);
     if (!coords) return;
@@ -416,56 +243,8 @@ export default function App() {
     ));
   }, [clientToImageCoords]);
 
-  const moveShapeTo = useCallback((shapeId, clientX, clientY, offsetX = 0, offsetY = 0) => {
-    const coords = clientToImageCoords(clientX, clientY);
-    if (!coords) return;
-    const cx = coords.x + offsetX;
-    const cy = coords.y + offsetY;
-    setShapes(prev => prev.map(s =>
-      s.id === shapeId ? { ...s, cx, cy } : s
-    ));
-  }, [clientToImageCoords]);
-
-  const resizeShapeByHandle = useCallback((shapeId, handleId, clientX, clientY, origin) => {
-    const coords = clientToImageCoords(clientX, clientY, true);
-    if (!coords) return;
-    const { cx, cy } = origin;
-    let rx = origin.rx;
-    let ry = origin.ry;
-    if (handleId === "e" || handleId === "w") {
-      rx = Math.max(MIN_SHAPE_RADIUS, Math.abs(coords.x - cx));
-    } else if (handleId === "n" || handleId === "s") {
-      ry = Math.max(MIN_SHAPE_RADIUS, Math.abs(coords.y - cy));
-    }
-    setShapes(prev => prev.map(s =>
-      s.id === shapeId ? { ...s, rx, ry } : s
-    ));
-  }, [clientToImageCoords]);
-
-  // 빈 공간 탭: 1번째=중심, 2번째=가장자리(확정). Shift=정원
-  const handleEllipseTap = useCallback((clientX, clientY, lockCircle = false) => {
-    const coords = clientToImageCoords(clientX, clientY);
-    if (!coords) return;
-
-    const center = ellipseCenterRef.current;
-    if (center) {
-      const shape = ellipseFromDrag(center.x, center.y, coords.x, coords.y, lockCircle);
-      if (shape.rx >= MIN_SHAPE_RADIUS && shape.ry >= MIN_SHAPE_RADIUS) {
-        setHistory(prev => [...prev, makeSnapshot()]);
-        setShapes(prev => [...prev, { id: Date.now(), ...shape }]);
-      }
-      setEllipseCenter(null);
-      setPreviewShape(null);
-      return;
-    }
-
-    // 첫 클릭은 빈 공간에서만 (원/핸들 위에서는 무시)
-    if (findHandleAt(clientX, clientY) || findShapeAt(clientX, clientY)) return;
-    setEllipseCenter({ x: coords.x, y: coords.y });
-  }, [clientToImageCoords, makeSnapshot, findHandleAt, findShapeAt]);
-
   const placeMarkerAt = useCallback((clientX, clientY) => {
-    if (!image || mode === "ellipse") return;
+    if (!image) return;
     const coords = clientToImageCoords(clientX, clientY);
     if (!coords) return;
     const { x, y } = coords;
@@ -503,66 +282,20 @@ export default function App() {
   }, [image, clientToImageCoords, mode, lockNumber, makeSnapshot]);
 
   const beginPointerDrag = useCallback((clientX, clientY) => {
-    const hitMarker = findMarkerAt(clientX, clientY);
-    if (hitMarker) {
+    const hit = findMarkerAt(clientX, clientY);
+    if (hit) {
       const coords = clientToImageCoords(clientX, clientY);
       return {
         type: "marker",
-        markerId: hitMarker.id,
+        markerId: hit.id,
         startX: clientX,
         startY: clientY,
-        offsetX: coords ? hitMarker.x - coords.x : 0,
-        offsetY: coords ? hitMarker.y - coords.y : 0,
+        offsetX: coords ? hit.x - coords.x : 0,
+        offsetY: coords ? hit.y - coords.y : 0,
         moved: false,
         snapshot: makeSnapshot(),
       };
     }
-
-    // 원형 모드: 핸들=크기, 원 위=이동, 빈 공간=즉시 pan / 탭=두 번 클릭 그리기
-    if (modeRef.current === "ellipse") {
-      const hitHandle = findHandleAt(clientX, clientY);
-      if (hitHandle) {
-        return {
-          type: "resize-shape",
-          shapeId: hitHandle.shapeId,
-          handleId: hitHandle.handleId,
-          origin: hitHandle.origin,
-          startX: clientX,
-          startY: clientY,
-          moved: false,
-          snapshot: makeSnapshot(),
-        };
-      }
-
-      // 중심 대기 중이 아닐 때만 원 본체를 이동 대상으로
-      if (!ellipseCenterRef.current) {
-        const hitShape = findShapeAt(clientX, clientY);
-        if (hitShape) {
-          const coords = clientToImageCoords(clientX, clientY);
-          return {
-            type: "shape",
-            shapeId: hitShape.id,
-            startX: clientX,
-            startY: clientY,
-            offsetX: coords ? hitShape.cx - coords.x : 0,
-            offsetY: coords ? hitShape.cy - coords.y : 0,
-            moved: false,
-            snapshot: makeSnapshot(),
-          };
-        }
-      }
-
-      const { pan: p } = transformRef.current;
-      return {
-        type: "pan",
-        startX: clientX,
-        startY: clientY,
-        startPan: { ...p },
-        moved: false,
-        ellipseTap: true, // 움직임 없으면 두 번 클릭 그리기
-      };
-    }
-
     const { pan: p } = transformRef.current;
     return {
       type: "pan",
@@ -571,7 +304,7 @@ export default function App() {
       startPan: { ...p },
       moved: false,
     };
-  }, [findMarkerAt, findShapeAt, findHandleAt, makeSnapshot, clientToImageCoords]);
+  }, [findMarkerAt, makeSnapshot, clientToImageCoords]);
 
   const handleMouseDown = (e) => {
     if (!image || e.button !== 0) return;
@@ -619,10 +352,6 @@ export default function App() {
 
       if (drag.type === "marker") {
         moveMarkerTo(drag.markerId, e.clientX, e.clientY, drag.offsetX, drag.offsetY);
-      } else if (drag.type === "resize-shape") {
-        resizeShapeByHandle(drag.shapeId, drag.handleId, e.clientX, e.clientY, drag.origin);
-      } else if (drag.type === "shape") {
-        moveShapeTo(drag.shapeId, e.clientX, e.clientY, drag.offsetX, drag.offsetY);
       } else if (drag.type === "pan") {
         const newPan = {
           x: drag.startPan.x + dx,
@@ -639,20 +368,17 @@ export default function App() {
       mouseDragRef.current = null;
       setIsDragging(false);
 
-      if (drag.type === "marker" || drag.type === "shape" || drag.type === "resize-shape") {
+      if (drag.type === "marker") {
+        // 마커 이동 완료 → undo 히스토리 추가
         if (drag.moved) {
           setHistory(prev => [...prev, drag.snapshot]);
         }
         return;
       }
 
-      // 빈 공간: 움직임 없음 → 마커 배치 또는 원형 두 번 클릭, 드래그 → pan만
+      // 빈 공간: 5px 미만 → 새 마커, 이상 → 사진 pan만
       if (!drag.moved) {
-        if (drag.ellipseTap) {
-          handleEllipseTap(e.clientX, e.clientY, e.shiftKey);
-        } else {
-          placeMarkerAt(e.clientX, e.clientY);
-        }
+        placeMarkerAt(e.clientX, e.clientY);
       }
     };
 
@@ -662,7 +388,7 @@ export default function App() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [placeMarkerAt, handleEllipseTap, moveMarkerTo, moveShapeTo, resizeShapeByHandle]);
+  }, [placeMarkerAt, moveMarkerTo]);
 
   // 브라우저 페이지 줌(Ctrl+휠/트랙패드 핀치)이 메뉴까지 축소하지 않도록 차단
   useEffect(() => {
@@ -702,8 +428,6 @@ export default function App() {
       startMid: getTouchMidpoint(t1, t2),
     };
     tapRef.current = null;
-    mouseDragRef.current = null;
-    setPreviewShape(null);
     setIsDragging(false);
   };
 
@@ -775,10 +499,6 @@ export default function App() {
 
       if (drag.type === "marker") {
         moveMarkerTo(drag.markerId, t.clientX, t.clientY, drag.offsetX, drag.offsetY);
-      } else if (drag.type === "resize-shape") {
-        resizeShapeByHandle(drag.shapeId, drag.handleId, t.clientX, t.clientY, drag.origin);
-      } else if (drag.type === "shape") {
-        moveShapeTo(drag.shapeId, t.clientX, t.clientY, drag.offsetX, drag.offsetY);
       } else if (drag.type === "pan") {
         const newPan = {
           x: drag.startPan.x + dx,
@@ -799,7 +519,6 @@ export default function App() {
       if (e.touches.length < 2) {
         pinchRef.current = null;
         tapRef.current = null;
-        setPreviewShape(null);
         setIsDragging(false);
       }
       return;
@@ -811,21 +530,17 @@ export default function App() {
       setIsDragging(false);
       e.preventDefault();
 
-      if (drag.type === "marker" || drag.type === "shape" || drag.type === "resize-shape") {
+      if (drag.type === "marker") {
         if (drag.moved) {
           setHistory(prev => [...prev, drag.snapshot]);
         }
         return;
       }
 
-      // 빈 공간: 탭 → 마커/원형 두 번 클릭, 드래그 → pan만
+      // 빈 공간 탭 → 새 마커, 드래그 → 사진 pan만
       if (!drag.moved) {
         const t = e.changedTouches[0];
-        if (drag.ellipseTap) {
-          handleEllipseTap(t.clientX, t.clientY, false);
-        } else {
-          placeMarkerAt(t.clientX, t.clientY);
-        }
+        placeMarkerAt(t.clientX, t.clientY);
       }
     }
   };
@@ -834,9 +549,7 @@ export default function App() {
     if (history.length === 0) return;
     const snapshot = history[history.length - 1];
     setMarkers(snapshot.markers);
-    setShapes(snapshot.shapes ?? []);
     setNextHoldNumber(snapshot.nextHoldNumber);
-    setPreviewShape(null);
     setHistory(h => h.slice(0, -1));
   };
 
@@ -865,7 +578,7 @@ export default function App() {
     ctx.drawImage(imgRef.current, 0, 0);
     const mc = document.createElement("canvas");
     mc.width = imgSize.w; mc.height = imgSize.h;
-    drawAll(mc.getContext("2d"), markers, 1, markerSize, 1, shapes);
+    drawAll(mc.getContext("2d"), markers, 1, markerSize);
     ctx.drawImage(mc, 0, 0);
     const a = document.createElement("a");
     a.href = offscreen.toDataURL("image/png"); a.download = "route_map.png"; a.click();
@@ -907,12 +620,11 @@ export default function App() {
           {/* 모드 버튼 */}
           <div style={{ display:"flex", gap:6, padding:"8px 10px", background:"#111", overflowX:"auto", flexShrink:0, zIndex:200, flexWrap:"nowrap" }}>
             {[
-              { key:"hold",    label:"홀드",   activeColor:"white",   activeText:"#111" },
-              { key:"start",   label:"START",  activeColor:"#22c55e", activeText:"white" },
-              { key:"top",     label:"TOP",    activeColor:"#3b82f6", activeText:"white" },
-              { key:"clip",    label:"클립",   activeColor:"#facc15", activeText:"#111" },
-              { key:"duo",     label:"듀오",   activeColor:"#ec4899", activeText:"white" },
-              { key:"ellipse", label:"○ 원형", activeColor:"#a3a3a3", activeText:"#111" },
+              { key:"hold",  label:"홀드",  activeColor:"white",   activeText:"#111" },
+              { key:"start", label:"START", activeColor:"#22c55e", activeText:"white" },
+              { key:"top",   label:"TOP",   activeColor:"#3b82f6", activeText:"white" },
+              { key:"clip",  label:"클립",  activeColor:"#facc15", activeText:"#111" },
+              { key:"duo",   label:"듀오",  activeColor:"#ec4899", activeText:"white" },
             ].map(btn => (
               <button key={btn.key} onClick={() => setMode(btn.key)}
                 style={{ flexShrink:0, padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:"bold", cursor:"pointer",
@@ -959,7 +671,6 @@ export default function App() {
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"4px 12px", background:"#0a0a0f", borderBottom:"1px solid #1a1a1a", flexShrink:0, zIndex:200 }}>
             <span style={{ fontSize:11, color:"#555" }}>
               {!image ? "사진을 먼저 열어주세요" :
-               mode==="ellipse" ? (ellipseCenter ? "두 번째 클릭: 가장자리 지정 (Shift: 정원)" : "클릭: 중심 · 드래그: 이동/pan · 핸들: 크기") :
                mode==="duo" ? `듀오 마커 클릭: ${nextHoldNumber}/${nextHoldNumber+1}` :
                mode==="start" ? "START 홀드 클릭" :
                mode==="top" ? "TOP 홀드 클릭" :
