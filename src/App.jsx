@@ -11,6 +11,9 @@ const COLORS = {
   duo:   { fill: "rgba(255,255,255,0.85)", stroke: "#f472b6", text: "#111" },
 };
 
+const dpr = window.devicePixelRatio || 1;
+ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
 function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS) {
   const r = markerSize * scale;
   const fs = FONT_SIZE * scale;
@@ -321,7 +324,22 @@ export default function App() {
               <img ref={imgRef} src={image} alt="route"
                 style={{ width: imgSize.w * scale, height: imgSize.h * scale, display:"block",touchAction:"pinch-zoom" }} />
               <canvas ref={canvasRef}
-                width={imgSize.w * scale} height={imgSize.h * scale}
+                ref={canvasRef}
+                width={imgSize.w * scale * (window.devicePixelRatio || 1)}
+                height={imgSize.h * scale * (window.devicePixelRatio || 1)}
+                onClick={handleCanvasClick}
+                onTouchStart={e => {
+                  if (e.touches.length === 1) {
+                    e.preventDefault();
+                    handleCanvasClick(e);
+                  }
+                }}
+                style={{ 
+                  position:"absolute", top:0, left:0, 
+                  width: imgSize.w * scale, 
+                  height: imgSize.h * scale, 
+                  touchAction:"pan-x pan-y pinch-zoom" 
+                }}
                 onClick={handleCanvasClick}
                 onTouchStart={e => {
                   if (e.touches.length === 1) {
