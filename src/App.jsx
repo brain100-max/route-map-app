@@ -11,9 +11,6 @@ const COLORS = {
   duo:   { fill: "rgba(255,255,255,0.85)", stroke: "#f472b6", text: "#111" },
 };
 
-const dpr = window.devicePixelRatio || 1;
-ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
 function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS) {
   const r = markerSize * scale;
   const fs = FONT_SIZE * scale;
