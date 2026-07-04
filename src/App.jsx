@@ -310,7 +310,7 @@ export default function App() {
         </div>
 
         {/* 캔버스 영역 */}
-        <div ref={containerRef} style={{ position:"relative", background:"#0a0a0f", cursor:"crosshair", minHeight: image ? undefined : 200 }}>
+        <div ref={containerRef} style={{ position:"relative", background:"#0a0a0f", cursor:"crosshair", overflowX:"auto", overflowY:"auto", minHeight: image ? undefined : 200 }}>
           {!image ? (
             <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:200, color:"#333" }}>
               <div style={{ fontSize:32 }}>🧗</div>
@@ -319,7 +319,7 @@ export default function App() {
           ) : (
             <>
               <img ref={imgRef} src={image} alt="route"
-                style={{ width: imgSize.w * scale, height: imgSize.h * scale, display:"block" }} />
+                style={{ width: imgSize.w * scale, height: imgSize.h * scale, display:"block",touchAction:"pinch-zoom" }} />
               <canvas ref={canvasRef}
                 width={imgSize.w * scale} height={imgSize.h * scale}
                 onClick={handleCanvasClick}
