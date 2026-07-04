@@ -16,13 +16,10 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS) {
   const fs = FONT_SIZE * scale;
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-  // 듀오 타원 표시 제거: 듀오 라벨만 표시
-
   markers.forEach(m => {
     const x = m.x * scale;
     const y = m.y * scale;
     const c = COLORS[m.type] || COLORS.hold;
-    const label = (m.type === "top") ? "TOP" : (m.type === "start") ? "S" : String(m.label ?? m.number);
 
     ctx.font = `bold ${fs}px sans-serif`;
 
@@ -49,6 +46,7 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS) {
       ctx.textBaseline = "middle";
       ctx.fillText(text, x, y);
     } else {
+      const label = String(m.label ?? m.number ?? "");
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fillStyle = c.fill;
@@ -79,23 +77,15 @@ export default function App() {
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
 
-  // 다음 홀드 번호는 markers를 매번 다시 세지 않고 상태로 관리한다.
-  // 일반 홀드: +1, 듀오홀드: +2, START/TOP/clip: 번호 증가 없음
   const getNextNumberFromLabels = useCallback((markerList) => {
     let maxNumber = 0;
-
     for (const m of markerList) {
       if (["top", "clip", "start"].includes(m.type)) continue;
-
       const raw = String(m.label ?? m.number ?? "");
       const nums = raw.match(/\d+/g);
       if (!nums) continue;
-
-      for (const n of nums) {
-        maxNumber = Math.max(maxNumber, Number(n));
-      }
+      for (const n of nums) maxNumber = Math.max(maxNumber, Number(n));
     }
-
     return maxNumber + 1;
   }, []);
 
@@ -132,31 +122,24 @@ export default function App() {
     return () => window.removeEventListener("resize", handleContainerResize);
   }, [handleContainerResize]);
 
-  const makeSnapshot = () => ({
-    markers: [...markers],
-    nextHoldNumber,
-  });
+  const makeSnapshot = () => ({ markers: [...markers], nextHoldNumber });
 
   const handleCanvasClick = (e) => {
     if (!image) return;
-    const rect = canvasRef.current.getBoundingClientRect();
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const x = (clientX - rect.left) / scale;
-    const y = (clientY - rect.top) / scale;
+
+    // 핵심: rect 기준으로 비율 계산 → 원본 이미지 좌표로 변환
+    const x = (clientX - rect.left) / rect.width * imgSize.w;
+    const y = (clientY - rect.top) / rect.height * imgSize.h;
+
     const snapshot = makeSnapshot();
 
     if (mode === "duo") {
       const n = nextHoldNumber;
-      const marker = {
-        id: Date.now(),
-        x,
-        y,
-        type: "duo",
-        label: `${n}/${n + 1}`,
-        number: n,
-      };
-
+      const marker = { id: Date.now(), x, y, type: "duo", label: `${n}/${n+1}`, number: n };
       setHistory(prev => [...prev, snapshot]);
       setMarkers(prev => [...prev, marker]);
       setNextHoldNumber(prev => prev + 2);
@@ -166,14 +149,11 @@ export default function App() {
     let label, number;
     if (mode === "clip") {
       const cnt = markers.filter(m => m.type === "clip").length + 1;
-      label = `C${cnt}`;
-      number = cnt;
+      label = `C${cnt}`; number = cnt;
     } else if (mode === "top") {
-      label = "TOP";
-      number = 0;
+      label = "TOP"; number = 0;
     } else if (mode === "start") {
-      label = "START";
-      number = 0;
+      label = "START"; number = 0;
     } else {
       number = nextHoldNumber;
       label = String(number);
@@ -182,15 +162,11 @@ export default function App() {
     const marker = { id: Date.now(), x, y, type: mode, label, number };
     setHistory(prev => [...prev, snapshot]);
     setMarkers(prev => [...prev, marker]);
-
-    if (mode === "hold") {
-      setNextHoldNumber(n => n + 1);
-    }
+    if (mode === "hold") setNextHoldNumber(n => n + 1);
   };
 
   const handleUndo = () => {
     if (history.length === 0) return;
-
     const snapshot = history[history.length - 1];
     setMarkers(snapshot.markers);
     setNextHoldNumber(snapshot.nextHoldNumber);
@@ -200,7 +176,6 @@ export default function App() {
   const handleDeleteMarker = (id) => {
     const snapshot = makeSnapshot();
     const nextMarkers = markers.filter(m => m.id !== id);
-
     setHistory(prev => [...prev, snapshot]);
     setMarkers(nextMarkers);
     setNextHoldNumber(getNextNumberFromLabels(nextMarkers));
@@ -208,7 +183,7 @@ export default function App() {
 
   const handleExportCSV = () => {
     const rows = [["number","x","y","type","label"]];
-    markers.forEach((m) => rows.push([m.label ?? m.number ?? "", Math.round(m.x), Math.round(m.y), m.type, m.label ?? ""]));
+    markers.forEach(m => rows.push([m.label ?? m.number ?? "", Math.round(m.x), Math.round(m.y), m.type, m.label ?? ""]));
     const csv = rows.map(r => r.join(",")).join("\n");
     const blob = new Blob(["\uFEFF"+csv], { type: "text/csv;charset=utf-8;" });
     const a = document.createElement("a");
@@ -231,14 +206,6 @@ export default function App() {
 
   const nextNum = nextHoldNumber;
   const hasStart = markers.some(m => m.type === "start");
-
-  const modeButtons = [
-    { key: "hold",  label: "홀드",   color: mode==="hold"  ? "bg-white text-gray-900" : "bg-gray-700 text-white" },
-    { key: "start", label: "START", color: mode==="start" ? "bg-green-500 text-white" : "bg-gray-700 text-white" },
-    { key: "top",   label: "TOP",   color: mode==="top"   ? "bg-blue-600 text-white"  : "bg-gray-700 text-white" },
-    { key: "clip",  label: "클립",   color: mode==="clip"  ? "bg-yellow-400 text-gray-900" : "bg-gray-700 text-white" },
-    { key: "duo",   label: "듀오",   color: mode==="duo"   ? "bg-pink-500 text-white"  : "bg-gray-700 text-white" },
-  ];
 
   return (
     <div style={{ display:"flex", flexDirection:"column", minHeight:"100vh", background:"#0a0a0f", color:"white", fontFamily:"sans-serif" }}>
@@ -269,15 +236,18 @@ export default function App() {
 
         {/* 모드 버튼 */}
         <div style={{ display:"flex", gap:6, padding:"8px 10px", background:"#111", overflowX:"auto", position:"sticky", top:84, zIndex:200, flexWrap:"nowrap" }}>
-          {modeButtons.map(btn => (
+          {[
+            { key:"hold",  label:"홀드",  activeColor:"white",   activeText:"#111" },
+            { key:"start", label:"START", activeColor:"#22c55e", activeText:"white" },
+            { key:"top",   label:"TOP",   activeColor:"#3b82f6", activeText:"white" },
+            { key:"clip",  label:"클립",  activeColor:"#facc15", activeText:"#111" },
+            { key:"duo",   label:"듀오",  activeColor:"#ec4899", activeText:"white" },
+          ].map(btn => (
             <button key={btn.key} onClick={() => setMode(btn.key)}
-              style={{ flexShrink:0, padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:"bold", cursor:"pointer", border: mode===btn.key ? "2px solid white" : "2px solid transparent",
-                background: btn.key==="hold" && mode===btn.key ? "white" :
-                            btn.key==="start" && mode===btn.key ? "#22c55e" :
-                            btn.key==="top" && mode===btn.key ? "#3b82f6" :
-                            btn.key==="clip" && mode===btn.key ? "#facc15" :
-                            btn.key==="duo" && mode===btn.key ? "#ec4899" : "#333",
-                color: (btn.key==="hold"||btn.key==="clip") && mode===btn.key ? "#111" : "white",
+              style={{ flexShrink:0, padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:"bold", cursor:"pointer",
+                border: mode===btn.key ? "2px solid white" : "2px solid transparent",
+                background: mode===btn.key ? btn.activeColor : "#333",
+                color: mode===btn.key ? btn.activeText : "white",
                 opacity: mode===btn.key ? 1 : 0.55 }}>
               {btn.label}
             </button>
@@ -287,9 +257,7 @@ export default function App() {
         {/* 마커 크기 슬라이더 */}
         <div style={{ display:"flex", alignItems:"center", gap:8, padding:"4px 12px", background:"#111", borderBottom:"1px solid #1a1a1a", position:"sticky", top:130, zIndex:200 }}>
           <span style={{ fontSize:11, color:"#666", whiteSpace:"nowrap" }}>마커 크기</span>
-          <input type="range" min={8} max={24} value={markerSize}
-            onChange={e => setMarkerSize(Number(e.target.value))}
-            style={{ flex:1 }} />
+          <input type="range" min={8} max={24} value={markerSize} onChange={e => setMarkerSize(Number(e.target.value))} style={{ flex:1 }} />
           <span style={{ fontSize:11, color:"#888", width:20 }}>{markerSize}</span>
         </div>
 
@@ -297,20 +265,23 @@ export default function App() {
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"4px 12px", background:"#0a0a0f", borderBottom:"1px solid #1a1a1a", position:"sticky", top:166, zIndex:200 }}>
           <span style={{ fontSize:11, color:"#555" }}>
             {!image ? "사진을 먼저 열어주세요" :
-             mode==="duo" ? `듀오 마커 클릭: ${nextHoldNumber}/${nextHoldNumber + 1}` :
+             mode==="duo" ? `듀오 마커 클릭: ${nextHoldNumber}/${nextHoldNumber+1}` :
              mode==="start" ? "START 홀드 클릭" :
              mode==="top" ? "TOP 홀드 클릭" :
              mode==="clip" ? `클립 C${markers.filter(m=>m.type==="clip").length+1} 위치 클릭` :
              `다음 홀드: #${nextNum}${!hasStart ? " (START 먼저 찍으면 1번부터)" : ""}`}
           </span>
           <button onClick={handleUndo} disabled={history.length===0}
-            style={{ fontSize:12, padding:"3px 10px", borderRadius:6, border:"none", background: history.length===0 ? "#1a1a1a" : "#333", color: history.length===0 ? "#333" : "#facc15", cursor: history.length===0 ? "default" : "pointer" }}>
+            style={{ fontSize:12, padding:"3px 10px", borderRadius:6, border:"none",
+              background: history.length===0 ? "#1a1a1a" : "#333",
+              color: history.length===0 ? "#333" : "#facc15",
+              cursor: history.length===0 ? "default" : "pointer" }}>
             ↩ 취소
           </button>
         </div>
 
         {/* 캔버스 영역 */}
-        <div ref={containerRef} style={{ position:"relative", background:"#0a0a0f", cursor:"crosshair", overflowX:"auto", overflowY:"auto", minHeight: image ? undefined : 200 }}>
+        <div ref={containerRef} style={{ position:"relative", background:"#0a0a0f", cursor:"crosshair", minHeight: image ? undefined : 200 }}>
           {!image ? (
             <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:200, color:"#333" }}>
               <div style={{ fontSize:32 }}>🧗</div>
@@ -319,30 +290,13 @@ export default function App() {
           ) : (
             <>
               <img ref={imgRef} src={image} alt="route"
-                style={{ width: imgSize.w * scale, height: imgSize.h * scale, display:"block",touchAction:"pinch-zoom" }} />
+                style={{ width: imgSize.w * scale, height: imgSize.h * scale, display:"block" }} />
               <canvas ref={canvasRef}
-                ref={canvasRef}
-                width={imgSize.w * scale * (window.devicePixelRatio || 1)}
-                height={imgSize.h * scale * (window.devicePixelRatio || 1)}
+                width={imgSize.w * scale}
+                height={imgSize.h * scale}
                 onClick={handleCanvasClick}
                 onTouchStart={e => {
-                  if (e.touches.length === 1) {
-                    e.preventDefault();
-                    handleCanvasClick(e);
-                  }
-                }}
-                style={{ 
-                  position:"absolute", top:0, left:0, 
-                  width: imgSize.w * scale, 
-                  height: imgSize.h * scale, 
-                  touchAction:"pan-x pan-y pinch-zoom" 
-                }}
-                onClick={handleCanvasClick}
-                onTouchStart={e => {
-                  if (e.touches.length === 1) {
-                    e.preventDefault();
-                    handleCanvasClick(e);
-                  }
+                  if (e.touches.length === 1) { e.preventDefault(); handleCanvasClick(e); }
                 }}
                 style={{ position:"absolute", top:0, left:0, width: imgSize.w * scale, height: imgSize.h * scale, touchAction:"pan-x pan-y pinch-zoom" }} />
             </>
@@ -362,50 +316,38 @@ export default function App() {
             </button>
           </div>
         )}
-
       </>)}
 
-{tab === "list" && (
-    <div style={{ flex:1, overflowY:"auto", padding:"10px 12px" }}>
-      {markers.length === 0 ? (
-        <div style={{ textAlign:"center", color:"#555", fontSize:13, marginTop:40 }}>아직 마커가 없습니다</div>
-      ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-          {[...markers].reverse().map(m => (
-            <div key={m.id} style={{ display:"flex", alignItems:"center", gap:8, background:"#1a1a1a", borderRadius:8, padding:"8px 10px" }}>
-              
-              {/* 색상 뱃지 */}
-              <span style={{ fontSize:11, fontWeight:"bold", padding:"2px 8px", borderRadius:20, flexShrink:0,
-                background: m.type==="top" ? "#3b82f6" : m.type==="start" ? "#22c55e" : m.type==="clip" ? "#facc15" : m.type==="duo" ? "#ec4899" : "white",
-                color: (m.type==="clip"||m.type==="hold") ? "#111" : "white" }}>
-                {m.label}
-              </span>
-
-              {/* type 드롭다운 */}
-              <select value={m.type}
-                onChange={e => setMarkers(prev => prev.map(x => x.id===m.id ? {...x, type:e.target.value} : x))}
-                style={{ background:"#333", color:"white", border:"1px solid #444", borderRadius:6, fontSize:11, padding:"2px 4px" }}>
-                {["hold","start","top","clip","duo"].map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-
-              {/* 번호 수정 */}
-              <input value={m.label} onChange={e => setMarkers(prev => prev.map(x => x.id===m.id ? {...x, label:e.target.value} : x))}
-                style={{ background:"#333", color:"white", border:"1px solid #444", borderRadius:6, fontSize:11, padding:"2px 6px", width:50 }} />
-
-              {/* 좌표 */}
-              <span style={{ fontSize:11, color:"#aaa", flex:1 }}>({Math.round(m.x)}, {Math.round(m.y)})</span>
-
-              {/* 삭제 */}
-              <button onClick={() => handleDeleteMarker(m.id)}
-                style={{ background:"none", border:"none", color:"#666", fontSize:14, cursor:"pointer", padding:"0 4px", flexShrink:0 }}>✕</button>
+      {tab === "list" && (
+        <div style={{ flex:1, overflowY:"auto", padding:"10px 12px" }}>
+          {markers.length === 0 ? (
+            <div style={{ textAlign:"center", color:"#555", fontSize:13, marginTop:40 }}>아직 마커가 없습니다</div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+              {[...markers].reverse().map(m => (
+                <div key={m.id} style={{ display:"flex", alignItems:"center", gap:8, background:"#1a1a1a", borderRadius:8, padding:"8px 10px" }}>
+                  <span style={{ fontSize:11, fontWeight:"bold", padding:"2px 8px", borderRadius:20, flexShrink:0,
+                    background: m.type==="top" ? "#3b82f6" : m.type==="start" ? "#22c55e" : m.type==="clip" ? "#facc15" : m.type==="duo" ? "#ec4899" : "white",
+                    color: (m.type==="clip"||m.type==="hold") ? "#111" : "white" }}>
+                    {m.label}
+                  </span>
+                  <select value={m.type}
+                    onChange={e => setMarkers(prev => prev.map(x => x.id===m.id ? {...x, type:e.target.value} : x))}
+                    style={{ background:"#333", color:"white", border:"1px solid #444", borderRadius:6, fontSize:11, padding:"2px 4px" }}>
+                    {["hold","start","top","clip","duo"].map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <input value={m.label}
+                    onChange={e => setMarkers(prev => prev.map(x => x.id===m.id ? {...x, label:e.target.value} : x))}
+                    style={{ background:"#333", color:"white", border:"1px solid #444", borderRadius:6, fontSize:11, padding:"2px 6px", width:50 }} />
+                  <span style={{ fontSize:11, color:"#aaa", flex:1 }}>({Math.round(m.x)}, {Math.round(m.y)})</span>
+                  <button onClick={() => handleDeleteMarker(m.id)}
+                    style={{ background:"none", border:"none", color:"#666", fontSize:14, cursor:"pointer", padding:"0 4px", flexShrink:0 }}>✕</button>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
-    </div>
-  )}
     </div>
   );
 }
