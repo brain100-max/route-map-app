@@ -49,19 +49,14 @@ function getShapeHandles(shape) {
   ];
 }
 
-// markerSize=14(기본)일 때 테두리 두께 4px, 슬라이더에 비례
-function ellipseStrokeWidth(markerSize = MARKER_RADIUS) {
-  return (markerSize / MARKER_RADIUS) * 4;
-}
-
-function drawEllipseShape(ctx, shape, s, markerSize = MARKER_RADIUS) {
+function drawEllipseShape(ctx, shape, s, strokeWidth = 1.5) {
   if (!shape || shape.rx <= 0 || shape.ry <= 0) return;
   ctx.beginPath();
   ctx.ellipse(shape.cx * s, shape.cy * s, shape.rx * s, shape.ry * s, 0, 0, Math.PI * 2);
   ctx.fillStyle = "transparent";
   ctx.fill();
   ctx.strokeStyle = "#111";
-  ctx.lineWidth = ellipseStrokeWidth(markerSize);
+  ctx.lineWidth = strokeWidth;
   ctx.stroke();
 }
 
@@ -77,7 +72,7 @@ function drawShapeHandles(ctx, shape, s) {
   });
 }
 
-function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shapes = [], previewShape = null, showHandles = false, ellipseCenter = null) {
+function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shapes = [], previewShape = null, showHandles = false, ellipseCenter = null, shapeStrokeWidth = 1.5) {
   // scale: CSS 표시 배율, dpr: devicePixelRatio
   // ctx.scale(dpr)가 이미 적용된 경우 dpr=1, 미적용 시 dpr를 scale에 곱함
   const s = scale * dpr;
@@ -93,12 +88,12 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shape
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.restore();
 
-  // 원/타원 (마커와 분리, 번호 없음) — 테두리 두께는 markerSize에 비례
+  // 원/타원 — 테두리 두께는 shapeStrokeWidth (마커 크기와 독립)
   shapes.forEach(shape => {
-    drawEllipseShape(ctx, shape, s, markerSize);
+    drawEllipseShape(ctx, shape, s, shapeStrokeWidth);
     if (showHandles) drawShapeHandles(ctx, shape, s);
   });
-  if (previewShape) drawEllipseShape(ctx, previewShape, s, markerSize);
+  if (previewShape) drawEllipseShape(ctx, previewShape, s, shapeStrokeWidth);
   // 두 번 클릭 그리기: 중심점 표시
   if (ellipseCenter) {
     ctx.beginPath();
@@ -182,6 +177,7 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [scale, setScale] = useState(1);
   const [markerSize, setMarkerSize] = useState(14);
+  const [shapeStrokeWidth, setShapeStrokeWidth] = useState(1.5);
   const [tab, setTab] = useState("place");
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -304,8 +300,8 @@ export default function App() {
     ctx.scale(dpr, dpr);
     // 3) drawAll은 CSS scale로 그림 (ctx.scale이 dpr 반영)
     // 핸들은 원형 모드에서만 표시
-    drawAll(ctx, markers, scale, markerSize, 1, shapes, previewShape, mode === "ellipse", ellipseCenter);
-  }, [markers, shapes, previewShape, ellipseCenter, scale, image, markerSize, imgSize, mode]);
+    drawAll(ctx, markers, scale, markerSize, 1, shapes, previewShape, mode === "ellipse", ellipseCenter, shapeStrokeWidth);
+  }, [markers, shapes, previewShape, ellipseCenter, scale, image, markerSize, shapeStrokeWidth, imgSize, mode]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -870,7 +866,7 @@ export default function App() {
     ctx.drawImage(imgRef.current, 0, 0);
     const mc = document.createElement("canvas");
     mc.width = imgSize.w; mc.height = imgSize.h;
-    drawAll(mc.getContext("2d"), markers, 1, markerSize, 1, shapes);
+    drawAll(mc.getContext("2d"), markers, 1, markerSize, 1, shapes, null, false, null, shapeStrokeWidth);
     ctx.drawImage(mc, 0, 0);
     const a = document.createElement("a");
     a.href = offscreen.toDataURL("image/png"); a.download = "route_map.png"; a.click();
@@ -953,15 +949,36 @@ export default function App() {
             </button>
           </div>
 
-          {/* 홀드 모드: 마커 크기 / 원형 모드: 테두리 두께 */}
+          {/* 홀드 등: 마커 크기 / 원형: 테두리 두께 (서로 독립) */}
           <div style={{ display:"flex", alignItems:"center", gap:8, padding:"4px 12px", background:"#111", borderBottom:"1px solid #1a1a1a", flexShrink:0, zIndex:200 }}>
-            <span style={{ fontSize:11, color:"#666", whiteSpace:"nowrap" }}>
-              {mode === "ellipse" ? "테두리 두께" : "마커 크기"}
-            </span>
-            <input type="range" min={8} max={24} value={markerSize} onChange={e => setMarkerSize(Number(e.target.value))} style={{ flex:1 }} />
-            <span style={{ fontSize:11, color:"#888", width:28 }}>
-              {mode === "ellipse" ? Math.round(ellipseStrokeWidth(markerSize)) : markerSize}
-            </span>
+            {mode === "ellipse" ? (
+              <>
+                <span style={{ fontSize:11, color:"#666", whiteSpace:"nowrap" }}>테두리 두께</span>
+                <input
+                  type="range"
+                  min={1}
+                  max={8}
+                  step={0.5}
+                  value={shapeStrokeWidth}
+                  onChange={e => setShapeStrokeWidth(Number(e.target.value))}
+                  style={{ flex:1 }}
+                />
+                <span style={{ fontSize:11, color:"#888", width:28 }}>{shapeStrokeWidth}</span>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize:11, color:"#666", whiteSpace:"nowrap" }}>마커 크기</span>
+                <input
+                  type="range"
+                  min={8}
+                  max={24}
+                  value={markerSize}
+                  onChange={e => setMarkerSize(Number(e.target.value))}
+                  style={{ flex:1 }}
+                />
+                <span style={{ fontSize:11, color:"#888", width:28 }}>{markerSize}</span>
+              </>
+            )}
           </div>
 
           {/* 안내 + 취소 버튼 */}
