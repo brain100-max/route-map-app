@@ -54,54 +54,29 @@ function drawEllipseShape(ctx, shape, s, strokeWidth = 1.5) {
   ctx.fillStyle = "transparent"; ctx.fill(); ctx.strokeStyle = "#111"; ctx.lineWidth = strokeWidth; ctx.stroke();
 }
 
-function drawArrowShape(ctx, arrow, s, strokeWidth = 2) {
+function drawArrowShape(ctx, arrow, s, strokeWidth = 2, isMobile = false) {
   if (!arrow) return;
   const x1 = arrow.x1 * s; const y1 = arrow.y1 * s; const x2 = arrow.x2 * s; const y2 = arrow.y2 * s;
-  
-  // 🎨 기존 neonBlue 대신 가시성이 더 높은 형광 핫핑크로 교체!
-  const arrowColor = "#ff007f"; 
 
-  // 화살표 머리(삼각형 촉) 크기 및 각도 계산 (몸통 끝점을 머리 시작 지점 앞으로 당기기 위해 먼저 계산)
-  const angle = Math.atan2(y2 - y1, x2 - x1); 
-  const headLength = 16;
-  const bodyEndX = x2 - Math.cos(angle) * (headLength * 0.45);
-  const bodyEndY = y2 - Math.sin(angle) * (headLength * 0.45);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
 
-  // 1단계: 화살표 몸통 패스 및 라운드 스타일 설정 (머리 삼각형과 겹치지 않도록 bodyEnd 지점까지만 그림)
-  ctx.beginPath(); 
-  ctx.moveTo(x1, y1); 
-  ctx.lineTo(bodyEndX, bodyEndY);
-  
-  ctx.lineCap = "round";   
-  ctx.lineJoin = "round";  
+  const outlineExtra = isMobile ? 2 : 5; // 모바일 화면 렌더링에서만 흰색 외곽선을 얇게
 
-  // 2단계: 바깥쪽 흰색 굵은 테두리 선 그리기
-  ctx.strokeStyle = "#ffffff"; 
-  // 💡 가시성을 더 올리고 싶다면 테두리를 조금 더 두껍게 (+3.5) 조절해도 좋습니다!
-  ctx.lineWidth = (strokeWidth * 1.5) + 3.5; 
-  ctx.stroke();
-  
-  // 3단계: 안쪽 형광 핫핑크 핵심선 그리기
-  ctx.strokeStyle = arrowColor; 
-  ctx.lineWidth = strokeWidth * 1.5; 
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = strokeWidth * s + outlineExtra * s;
   ctx.stroke();
 
-  // 4단계: 화살표 머리(삼각형 촉) 그리기 (꼭짓점은 그대로 x2, y2)
-  ctx.beginPath(); 
-  ctx.moveTo(x2, y2);
-  ctx.lineTo(x2 - headLength * Math.cos(angle - Math.PI / 6), y2 - headLength * Math.sin(angle - Math.PI / 6));
-  ctx.lineTo(x2 - headLength * Math.cos(angle + Math.PI / 6), y2 - headLength * Math.sin(angle + Math.PI / 6));
-  ctx.closePath(); 
-  
-  // 머리 안쪽 채우기 (형광 핫핑크)
-  ctx.fillStyle = arrowColor; 
-  ctx.fill();
-  
-  // 머리 바깥 외곽선 두르기 (흰색 테두리)
-  ctx.strokeStyle = "#ffffff"; 
-  ctx.lineWidth = 2; 
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.strokeStyle = "#000000";
+  ctx.lineWidth = strokeWidth * s;
   ctx.stroke();
-  
+
   // 원래대로 Canvas 기본 마감 스타일 복원
   ctx.lineCap = "butt";
   ctx.lineJoin = "miter";
@@ -114,16 +89,20 @@ function drawShapeHandles(ctx, shape, s) {
   });
 }
 
-function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shapes = [], previewShape = null, selectedShapeId = null, ellipseCenter = null, ellipseStrokeWidth = 1.5, arrows = [], previewArrow = null, arrowCenter = null, arrowStrokeWidth = 1.5, minFontSize = null) {
+function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shapes = [], previewShape = null, selectedShapeId = null, ellipseCenter = null, ellipseStrokeWidth = 1.5, arrows = [], previewArrow = null, arrowCenter = null, arrowStrokeWidth = 1.5, applyMinFontSize = false) {
   const s = scale * dpr; const sizeRatio = markerSize / MARKER_RADIUS;
   const rawFs = FONT_SIZE * sizeRatio * s;
-  const fs = minFontSize != null ? Math.max(minFontSize, rawFs) : rawFs;
-  const applyMin = minFontSize != null;
+  const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+  const isMobile = applyMinFontSize && (window.innerWidth < 900 || isTouchDevice);
+  const minFs = isMobile ? markerSize * 0.7 : markerSize * 1.2;
+  const fs = applyMinFontSize ? Math.max(minFs, rawFs) : rawFs;
   const markerStrokeWidth = (duo) => {
-    const raw = (duo ? 4 : 3) * sizeRatio * s;
-    return applyMin ? Math.max(duo ? 3 : 2.5, raw) : raw;
+    const base = (duo ? 4 : 3) * sizeRatio * s;
+    if (!applyMinFontSize) return base;
+    return isMobile ? base * 0.6 : base;
   };
-  const startTopStrokeWidth = applyMin ? Math.max(2, 2 * sizeRatio * s) : 2 * sizeRatio * s;
+  const startTopBase = 2 * sizeRatio * s;
+  const startTopStrokeWidth = !applyMinFontSize ? startTopBase : (isMobile ? Math.max(1, startTopBase * 0.6) : startTopBase);
 
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height); ctx.restore();
 
@@ -174,16 +153,20 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shape
     ctx.fillStyle = "#111"; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.stroke();
   }
 
-  arrows.forEach(arrow => { drawArrowShape(ctx, arrow, s, arrowStrokeWidth); });
-  if (previewArrow) drawArrowShape(ctx, previewArrow, s, arrowStrokeWidth);
+  arrows.forEach(arrow => { drawArrowShape(ctx, arrow, s, arrowStrokeWidth, isMobile); });
+  if (previewArrow) drawArrowShape(ctx, previewArrow, s, arrowStrokeWidth, isMobile);
   if (arrowCenter) {
-    ctx.beginPath(); ctx.arc(arrowCenter.x * s, arrowCenter.y * s, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#ff4500"; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.stroke();
+    const startRadius = isMobile ? 2.2 : 4; // 모바일 화면 렌더링에서만 시작점 원을 축소 (약 45%)
+    const startBorderWidth = isMobile ? 0.9 : 1.5; // 모바일 화면 렌더링에서만 테두리 축소 (약 40%)
+    ctx.beginPath(); ctx.arc(arrowCenter.x * s, arrowCenter.y * s, startRadius, 0, Math.PI * 2);
+    ctx.fillStyle = "#ff4500"; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = startBorderWidth; ctx.stroke();
   }
 }
 
 function getTouchDistance(t1, t2) { const dx = t1.clientX - t2.clientX; const dy = t1.clientY - t2.clientY; return Math.hypot(dx, dy); }
 function getTouchMidpoint(t1, t2) { return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 }; }
+
+const showLockNumberFeature = false; // 🔒 번호 고정: 당분간 미사용, 로직은 유지하고 UI만 숨김
 
 export default function App() {
   const [image, setImage] = useState(null);
@@ -276,13 +259,38 @@ export default function App() {
     return { updatedList: updated, nextHold: holdCount };
   }, []);
 
+  const getNextHoldFromList = useCallback((list) => {
+    let max = 0;
+    list.forEach(m => {
+      if (m.type === "hold") max = Math.max(max, Number(m.number) || 0);
+      if (m.type === "duo") max = Math.max(max, (Number(m.number) || 0) + 1);
+    });
+    return max + 1;
+  }, []);
+
   useEffect(() => {
     if (!canvasRef.current || !image) return;
     const canvas = canvasRef.current; const dpr = window.devicePixelRatio || 1;
     const displayW = imgSize.w * scale; const displayH = imgSize.h * scale;
     canvas.width = Math.round(displayW * dpr); canvas.height = Math.round(displayH * dpr);
     const ctx = canvas.getContext("2d"); ctx.scale(dpr, dpr);
-    drawAll(ctx, markers, scale, markerSize, 1, shapes, previewShape, selectedShapeOrArrow?.type === "shape" ? selectedShapeOrArrow.id : null, ellipseCenter, ellipseStrokeWidth, arrows, previewArrow, arrowCenter, arrowStrokeWidth, 18);
+    drawAll(
+      ctx,
+      markers,
+      scale,
+      markerSize,
+      1,
+      shapes,
+      previewShape,
+      selectedShapeOrArrow?.type === "shape" ? selectedShapeOrArrow.id : null,
+      ellipseCenter,
+      ellipseStrokeWidth,
+      arrows,
+      previewArrow,
+      arrowCenter,
+      arrowStrokeWidth,
+      true
+    );
   }, [markers, shapes, previewShape, ellipseCenter, scale, image, markerSize, ellipseStrokeWidth, arrowStrokeWidth, imgSize, mode, arrows, previewArrow, arrowCenter, selectedShapeOrArrow]);
 
   const handleImageUpload = (e) => {
@@ -345,9 +353,15 @@ export default function App() {
 
         setHistory(prev => [...prev, makeSnapshot()]);
         
-        const { updatedList, nextHold } = reindexMarkers(importedMarkers);
-        setMarkers(updatedList); setShapes(importedShapes); setArrows(importedArrows); setNextHoldNumber(nextHold);
-        alert(`🎉 복원 성공!\n- 마커: ${updatedList.length}개\n- 원형 도형: ${importedShapes.length}개\n- 화살표: ${importedArrows.length}개`);
+        if (lockNumber) {
+          setMarkers(importedMarkers); setShapes(importedShapes); setArrows(importedArrows);
+          setNextHoldNumber(getNextHoldFromList(importedMarkers));
+          alert(`🎉 복원 성공!\n- 마커: ${importedMarkers.length}개\n- 원형 도형: ${importedShapes.length}개\n- 화살표: ${importedArrows.length}개`);
+        } else {
+          const { updatedList, nextHold } = reindexMarkers(importedMarkers);
+          setMarkers(updatedList); setShapes(importedShapes); setArrows(importedArrows); setNextHoldNumber(nextHold);
+          alert(`🎉 복원 성공!\n- 마커: ${updatedList.length}개\n- 원형 도형: ${importedShapes.length}개\n- 화살표: ${importedArrows.length}개`);
+        }
 
       } catch (err) {
         alert("❌ CSV 파일을 읽는 도중 오류가 발생했습니다.");
@@ -470,7 +484,8 @@ export default function App() {
   const placeMarkerAt = useCallback((clientX, clientY) => {
     if (!image || mode === "ellipse" || mode === "arrow") return;
     const coords = clientToImageCoords(clientX, clientY); if (!coords) return;
-    const { x, y } = coords; const snapshot = makeSnapshot(); const nHold = nextHoldNumberRef.current;
+    const { x, y } = coords; const snapshot = makeSnapshot();
+    const nHold = nextHoldNumberRef.current;
 
     let marker;
     if (mode === "duo") marker = { id: generateUUID(), x, y, type: "duo", label: `${nHold}/${nHold+1}`, number: nHold };
@@ -481,8 +496,15 @@ export default function App() {
 
     setHistory(prev => [...prev, snapshot]);
     setMarkers(prev => {
-      const newList = [...prev, marker]; const { updatedList, nextHold } = reindexMarkers(newList);
-      if (!lockNumber) setNextHoldNumber(nextHold); return updatedList;
+      const newList = [...prev, marker];
+      if (lockNumber) {
+        if (mode === "duo") setNextHoldNumber(nHold + 2);
+        else if (mode === "hold") setNextHoldNumber(nHold + 1);
+        return newList;
+      }
+      const { updatedList, nextHold } = reindexMarkers(newList);
+      setNextHoldNumber(nextHold);
+      return updatedList;
     });
   }, [image, clientToImageCoords, mode, lockNumber, makeSnapshot, reindexMarkers]);
 
@@ -511,14 +533,19 @@ export default function App() {
     }
 
     // 3. 계산된 중간 좌표(newX, newY)로 새 홀드를 생성합니다.
-    const newMarker = { id: generateUUID(), x: newX, y: newY, type: "hold", label: "", number: 0 };
+    const nHold = nextHoldNumberRef.current;
+    const newMarker = { id: generateUUID(), x: newX, y: newY, type: "hold", label: String(nHold), number: nHold };
     
     setHistory(prev => [...prev, snapshot]);
     setMarkers(prev => {
       const listToUpdate = [...prev]; 
       listToUpdate.splice(targetIndex, 0, newMarker);
+      if (lockNumber) {
+        setNextHoldNumber(nHold + 1);
+        return listToUpdate;
+      }
       const { updatedList, nextHold } = reindexMarkers(listToUpdate);
-      if (!lockNumber) setNextHoldNumber(nextHold); 
+      setNextHoldNumber(nextHold);
       return updatedList;
     });
     setTab("place");
@@ -527,8 +554,12 @@ export default function App() {
   const handleDeleteMarker = (id) => {
     const snapshot = makeSnapshot(); const nextMarkers = markersRef.current.filter(m => m.id !== id);
     setHistory(prev => [...prev, snapshot]);
-    const { updatedList, nextHold = 1 } = reindexMarkers(nextMarkers);
-    setMarkers(updatedList); setNextHoldNumber(updatedList.length === 0 ? 1 : nextHold);
+    if (lockNumber) {
+      setMarkers(nextMarkers);
+    } else {
+      const { updatedList, nextHold = 1 } = reindexMarkers(nextMarkers);
+      setMarkers(updatedList); setNextHoldNumber(updatedList.length === 0 ? 1 : nextHold);
+    }
   };
 
   const handleDeleteSelectedShapeOrArrow = () => {
@@ -802,16 +833,18 @@ export default function App() {
               { key:"top",     label:"TOP",    activeColor:"#3b82f6", activeText:"white" },
               { key:"clip",    label:"클립",   activeColor:"#facc15", activeText:"#111" },
               { key:"duo",     label:"듀오",   activeColor:"#ec4899", activeText:"white" },
-              { key:"arrow",   label:"🏹 화살표", activeColor:"#ff4500", activeText:"white" },
+              { key:"arrow",   label:"➖ 경로선", activeColor:"#ff4500", activeText:"white" },
               { key:"ellipse", label:"○ 원형", activeColor:"#a3a3a3", activeText:"#111" },
             ].map(btn => (
               <button key={btn.key} onClick={() => setMode(btn.key)} style={{ flexShrink:0, padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:"bold", cursor:"pointer", border: mode===btn.key ? "2px solid white" : "2px solid transparent", background: mode===btn.key ? btn.activeColor : "#333", color: mode===btn.key ? btn.activeText : "white", opacity: mode===btn.key ? 1 : 0.55 }}>
                 {btn.label}
               </button>
             ))}
-            <button onClick={() => { if (lockNumber) { setNextHoldNumber(reindexMarkers(markersRef.current).nextHold); } setLockNumber(v => !v); }} style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: "bold", cursor: "pointer", border: lockNumber ? "2px solid #fca5a5" : "2px solid transparent", background: lockNumber ? "#dc2626" : "#333", color: "white", opacity: lockNumber ? 1 : 0.55 }}>
-              🔒 번호 고정
-            </button>
+            {showLockNumberFeature && (
+              <button onClick={() => { if (lockNumber) setNextHoldNumber(getNextHoldFromList(markersRef.current)); setLockNumber(v => !v); }} style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: "bold", cursor: "pointer", border: lockNumber ? "2px solid #fca5a5" : "2px solid transparent", background: lockNumber ? "#dc2626" : "#333", color: "white", opacity: lockNumber ? 1 : 0.55 }}>
+                🔒 번호 고정
+              </button>
+            )}
           </div>
 
           {/* 슬라이더 */}
@@ -893,7 +926,7 @@ export default function App() {
                     <span style={{ fontSize:11, fontWeight:"bold", padding:"2px 8px", borderRadius:20, flexShrink:0, minWidth:24, textAlign:"center", background: m.type==="top" ? "#3b82f6" : m.type==="start" ? "#22c55e" : m.type==="clip" ? "#facc15" : m.type==="duo" ? "#ec4899" : "white", color: (m.type==="clip"||m.type==="hold") ? "#111" : "white" }}>
                       {m.label}
                     </span>
-                    <select value={m.type} onChange={e => { const snap = makeSnapshot(); const next = markers.map(x => x.id === m.id ? { ...x, type: e.target.value } : x); setHistory(prev => [...prev, snap]); const { updatedList, nextHold } = reindexMarkers(next); setMarkers(updatedList); if (!lockNumber) setNextHoldNumber(nextHold); }} style={{ background:"#333", color:"white", border:"1px solid #444", borderRadius:6, fontSize:11, padding:"2px 4px" }}>
+                    <select value={m.type} onChange={e => { const snap = makeSnapshot(); const next = markers.map(x => x.id === m.id ? { ...x, type: e.target.value } : x); setHistory(prev => [...prev, snap]); if (lockNumber) { setMarkers(next); } else { const { updatedList, nextHold } = reindexMarkers(next); setMarkers(updatedList); setNextHoldNumber(nextHold); } }} style={{ background:"#333", color:"white", border:"1px solid #444", borderRadius:6, fontSize:11, padding:"2px 4px" }}>
                       {["hold","start","top","clip","duo"].map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                     <span style={{ fontSize:11, color:"#666", flex:1 }}>({Math.round(m.x)}, {Math.round(m.y)})</span>
@@ -922,7 +955,9 @@ export default function App() {
               <ul style={{ margin:0, paddingLeft:18, fontSize:12, color:"#ddd", lineHeight:1.7 }}>
                 <li>사진 열기: 상단 "사진 열기" 버튼으로 루트 사진 업로드</li>
                 <li>배치 모드: 홀드/START/TOP/클립/듀오/원형/화살표 중 선택 후 사진 위 클릭</li>
-                <li>🔒 번호 고정: 켜두면 홀드 번호가 자동 증가하지 않고 고정됨 (파라클라이밍용)</li>
+                {showLockNumberFeature && (
+                  <li>🔒 번호 고정: 켜두면 홀드 번호가 자동 증가하지 않고 고정됨 (파라클라이밍용)</li>
+                )}
                 <li>슬라이더: 홀드 모드에서는 글자 크기, 원형/화살표 모드에서는 각각 테두리 두께 조절</li>
                 <li>↩ 취소: 방금 작업 되돌리기</li>
                 <li>줌 리셋: 확대/축소를 원래대로</li>
