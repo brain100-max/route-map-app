@@ -185,7 +185,6 @@ export default function App() {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [showHelp, setShowHelp] = useState(false);
-  const [showExportSheet, setShowExportSheet] = useState(false);
 
   const containerRef = useRef(null); const viewportRef = useRef(null); const canvasRef = useRef(null); const imgRef = useRef(null);
   const transformRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -203,10 +202,6 @@ export default function App() {
       tapRef.current = null;
     }
   }, [tab]);
-
-  useEffect(() => {
-    if (tab !== "place" || !image) setShowExportSheet(false);
-  }, [tab, image]);
 
   useEffect(() => { transformRef.current = { zoom, pan }; }, [zoom, pan]);
   useEffect(() => { markersRef.current = markers; }, [markers]);
@@ -744,20 +739,13 @@ export default function App() {
   const applyPinch = (t1, t2) => {
     const pinch = pinchRef.current; if (!pinch || pinch.startDistance <= 0) return;
     let newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pinch.startZoom * (getTouchDistance(t1, t2) / pinch.startDistance)));
-    const mid = getTouchMidpoint(t1, t2);
-    const viewportRect = viewportRef.current.getBoundingClientRect();
-    const midLocalX = mid.x - viewportRect.left;
-    const midLocalY = mid.y - viewportRect.top;
-    const current = transformRef.current;
-
-    // 현재 두 손가락 중심점 아래의 이미지 좌표를 고정(anchor)한 채 확대/축소
-    const anchorX = (midLocalX - current.pan.x) / current.zoom;
-    const anchorY = (midLocalY - current.pan.y) / current.zoom;
-    const newPan = {
-      x: midLocalX - anchorX * newZoom,
-      y: midLocalY - anchorY * newZoom
+    const mid = getTouchMidpoint(t1, t2); const viewportRect = viewportRef.current.getBoundingClientRect();
+    
+    const newPan = { 
+      x: mid.x - ((pinch.startMid.x - viewportRect.left - pinch.startPan.x) / pinch.startZoom) * newZoom, 
+      y: mid.y - ((pinch.startMid.y - viewportRect.top - pinch.startPan.y) / pinch.startZoom) * newZoom 
     };
-
+    
     transformRef.current = { zoom: newZoom, pan: newPan }; setZoom(newZoom); setPan(newPan);
   };
 
@@ -944,7 +932,10 @@ export default function App() {
           {/* 하단 저장 버튼 그룹 */}
           {image && (
             <div style={{ display:"flex", gap:8, padding:"10px 12px", background:"#111", borderTop:"1px solid #222", flexShrink:0, zIndex:200 }}>
-              <button onClick={() => setShowExportSheet(true)} style={{ flex:1, background:"#3b82f6", color:"white", border:"1px solid #2563eb", borderRadius:10, padding:"10px 0", fontSize:14, fontWeight:"bold", cursor:"pointer" }}>📤 내보내기</button>
+              <button onClick={handleExportPNG} style={{ flex:2, background:"#333", color:"white", border:"1px solid #444", borderRadius:10, padding:"10px 0", fontSize:14, fontWeight:"bold", cursor:"pointer" }}>PNG 저장</button>
+              <button onClick={handleExportJPG} style={{ flex:2, background:"#3b82f6", color:"white", border:"1px solid #444", borderRadius:10, padding:"10px 0", fontSize:14, fontWeight:"bold", cursor:"pointer" }}>JPG 저장</button>
+              <button onClick={handleExportPDF} style={{ flex:2, background:"#333", color:"white", border:"none", borderRadius:10, padding:"10px 0", fontSize:14, fontWeight:"bold", cursor:"pointer" }}>PDF 저장/인쇄</button>
+              <button onClick={handleExportCSV} style={{ flex:1, background:"#222", color:"#aaa", border:"1px solid #333", borderRadius:10, padding:"10px 0", fontSize:13, cursor:"pointer" }}>CSV 저장</button>
             </div>
           )}
         </div>
@@ -1034,18 +1025,6 @@ export default function App() {
                 <li>목록 탭에서 홀드 타입(hold/start/top/clip/duo)도 바로 변경 가능</li>
               </ul>
             </div>
-          </div>
-        </div>
-      )}
-
-      {showExportSheet && (
-        <div onClick={() => setShowExportSheet(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:1100, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width:"100%", maxWidth:520, background:"#111", borderTopLeftRadius:16, borderTopRightRadius:16, borderTop:"1px solid #333", padding:"12px 12px calc(12px + env(safe-area-inset-bottom)) 12px", display:"flex", flexDirection:"column", gap:8 }}>
-            <button onClick={() => { setShowExportSheet(false); handleExportPNG(); }} style={{ background:"#1f2937", color:"white", border:"1px solid #374151", borderRadius:10, padding:"12px 0", fontSize:14, fontWeight:"bold", cursor:"pointer" }}>🖼 PNG 저장</button>
-            <button onClick={() => { setShowExportSheet(false); handleExportJPG(); }} style={{ background:"#1f2937", color:"white", border:"1px solid #374151", borderRadius:10, padding:"12px 0", fontSize:14, fontWeight:"bold", cursor:"pointer" }}>📷 JPG 저장</button>
-            <button onClick={() => { setShowExportSheet(false); handleExportPDF(); }} style={{ background:"#1f2937", color:"white", border:"1px solid #374151", borderRadius:10, padding:"12px 0", fontSize:14, fontWeight:"bold", cursor:"pointer" }}>📄 PDF 저장</button>
-            <button onClick={() => { setShowExportSheet(false); handleExportCSV(); }} style={{ background:"#1f2937", color:"white", border:"1px solid #374151", borderRadius:10, padding:"12px 0", fontSize:14, fontWeight:"bold", cursor:"pointer" }}>📊 CSV 저장</button>
-            <button onClick={() => setShowExportSheet(false)} style={{ marginTop:4, background:"#27272a", color:"#d4d4d8", border:"1px solid #3f3f46", borderRadius:10, padding:"11px 0", fontSize:13, fontWeight:"bold", cursor:"pointer" }}>취소</button>
           </div>
         </div>
       )}
