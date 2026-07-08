@@ -54,32 +54,23 @@ function drawEllipseShape(ctx, shape, s, strokeWidth = 1.5) {
   ctx.fillStyle = "transparent"; ctx.fill(); ctx.strokeStyle = "#111"; ctx.lineWidth = strokeWidth; ctx.stroke();
 }
 
-function drawArrowShape(ctx, arrow, s, strokeWidth = 2, isMobile = false) {
+function drawArrowShape(ctx, arrow, s, strokeWidth = 2) {
   if (!arrow) return;
   const x1 = arrow.x1 * s; const y1 = arrow.y1 * s; const x2 = arrow.x2 * s; const y2 = arrow.y2 * s;
+  const snap = (v) => Math.round(v) + 0.5;
+  const sx1 = snap(x1); const sy1 = snap(y1); const sx2 = snap(x2); const sy2 = snap(y2);
 
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-
-  const outlineExtra = isMobile ? 2 : 5; // 모바일 화면 렌더링에서만 흰색 외곽선을 얇게
-
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = strokeWidth * s + outlineExtra * s;
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.strokeStyle = "#000000";
-  ctx.lineWidth = strokeWidth * s;
-  ctx.stroke();
-
-  // 원래대로 Canvas 기본 마감 스타일 복원
   ctx.lineCap = "butt";
   ctx.lineJoin = "miter";
+
+  const innerWidth = Math.max(1, strokeWidth * s);
+
+  ctx.beginPath();
+  ctx.moveTo(sx1, sy1);
+  ctx.lineTo(sx2, sy2);
+  ctx.strokeStyle = "#000000";
+  ctx.lineWidth = innerWidth;
+  ctx.stroke();
 }
 
 function drawShapeHandles(ctx, shape, s) {
@@ -149,15 +140,18 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shape
   shapes.forEach(shape => { drawEllipseShape(ctx, shape, s, ellipseStrokeWidth); if (shape.id === selectedShapeId) drawShapeHandles(ctx, shape, s); });
   if (previewShape) drawEllipseShape(ctx, previewShape, s, ellipseStrokeWidth);
   if (ellipseCenter) {
-    ctx.beginPath(); ctx.arc(ellipseCenter.x * s, ellipseCenter.y * s, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#111"; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.stroke();
+    const isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+    const centerRadius = isMobile ? 2.5 : 4;
+    const centerStroke = isMobile ? 1 : 1.5;
+    ctx.beginPath(); ctx.arc(ellipseCenter.x * s, ellipseCenter.y * s, centerRadius, 0, Math.PI * 2);
+    ctx.fillStyle = "#111"; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = centerStroke; ctx.stroke();
   }
 
-  arrows.forEach(arrow => { drawArrowShape(ctx, arrow, s, arrowStrokeWidth, isMobile); });
-  if (previewArrow) drawArrowShape(ctx, previewArrow, s, arrowStrokeWidth, isMobile);
+  arrows.forEach(arrow => { drawArrowShape(ctx, arrow, s, arrowStrokeWidth); });
+  if (previewArrow) drawArrowShape(ctx, previewArrow, s, arrowStrokeWidth);
   if (arrowCenter) {
-    const startRadius = isMobile ? 2.2 : 4; // 모바일 화면 렌더링에서만 시작점 원을 축소 (약 45%)
-    const startBorderWidth = isMobile ? 0.9 : 1.5; // 모바일 화면 렌더링에서만 테두리 축소 (약 40%)
+    const startRadius = 2;
+    const startBorderWidth = 1;
     ctx.beginPath(); ctx.arc(arrowCenter.x * s, arrowCenter.y * s, startRadius, 0, Math.PI * 2);
     ctx.fillStyle = "#ff4500"; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = startBorderWidth; ctx.stroke();
   }
@@ -199,6 +193,15 @@ export default function App() {
   const ellipseCenterRef = useRef(null); const arrowCenterRef = useRef(null);
   const pinchRef = useRef(null); const tapRef = useRef(null); const mouseDragRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  // 배치 화면(캔버스)이 언마운트되는 탭으로 전환될 때, 완료되지 않은 드래그/탭 제스처가
+  // ref에 남아 이후 엉뚱한 이벤트에서 소비되지 않도록 정리한다.
+  useEffect(() => {
+    if (tab !== "place") {
+      mouseDragRef.current = null;
+      tapRef.current = null;
+    }
+  }, [tab]);
 
   useEffect(() => { transformRef.current = { zoom, pan }; }, [zoom, pan]);
   useEffect(() => { markersRef.current = markers; }, [markers]);
@@ -291,7 +294,7 @@ export default function App() {
       arrowStrokeWidth,
       true
     );
-  }, [markers, shapes, previewShape, ellipseCenter, scale, image, markerSize, ellipseStrokeWidth, arrowStrokeWidth, imgSize, mode, arrows, previewArrow, arrowCenter, selectedShapeOrArrow]);
+  }, [markers, shapes, previewShape, ellipseCenter, scale, image, markerSize, ellipseStrokeWidth, arrowStrokeWidth, imgSize, mode, arrows, previewArrow, arrowCenter, selectedShapeOrArrow, tab]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0]; if (!file) return;
@@ -562,6 +565,19 @@ export default function App() {
     }
   };
 
+  const handleMarkerTypeChange = (id, newType) => {
+    const snap = makeSnapshot();
+    const next = markers.map(x => x.id === id ? { ...x, type: newType } : x);
+    setHistory(prev => [...prev, snap]);
+    if (lockNumber) {
+      setMarkers(next);
+    } else {
+      const { updatedList, nextHold } = reindexMarkers(next);
+      setMarkers(updatedList);
+      setNextHoldNumber(nextHold);
+    }
+  };
+
   const handleDeleteSelectedShapeOrArrow = () => {
     if (!selectedShapeOrArrow) return; const snapshot = makeSnapshot(); setHistory(prev => [...prev, snapshot]);
     if (selectedShapeOrArrow.type === "shape") setShapes(prev => prev.filter(s => s.id !== selectedShapeOrArrow.id));
@@ -601,7 +617,8 @@ export default function App() {
   }, [findMarkerAt, findShapeAt, findHandleAt, findArrowAt, makeSnapshot, clientToImageCoords]);
 
   const handleMouseDown = (e) => {
-    if (!image || e.button !== 0) return; e.preventDefault(); mouseDragRef.current = beginPointerDrag(e.clientX, e.clientY);
+    if (!image || e.button !== 0) return;
+    e.preventDefault(); mouseDragRef.current = beginPointerDrag(e.clientX, e.clientY);
   };
 
   const zoomAtPoint = useCallback((clientX, clientY, nextZoom) => {
@@ -624,7 +641,8 @@ export default function App() {
       else if (drag.type === "pan") { const newPan = { x: drag.startPan.x + dx, y: drag.startPan.y + dy }; transformRef.current = { ...transformRef.current, pan: newPan }; setPan(newPan); }
     };
     const handleMouseUp = (e) => {
-      const drag = mouseDragRef.current; if (!drag) return; mouseDragRef.current = null; setIsDragging(false);
+      const drag = mouseDragRef.current;
+      if (!drag) return; mouseDragRef.current = null; setIsDragging(false);
       if (drag.type === "marker" || drag.type === "resize-shape") { if (drag.moved) setHistory(prev => [...prev, drag.snapshot]); return; }
       if (drag.type === "shape") {
         if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
@@ -636,7 +654,11 @@ export default function App() {
         else setSelectedShapeOrArrow({ type: "arrow", id: drag.arrowId });
         return;
       }
-      if (!drag.moved) { if (drag.ellipseTap) handleEllipseTap(e.clientX, e.clientY, e.shiftKey); else if (drag.arrowTap) handleArrowTap(e.clientX, e.clientY); else placeMarkerAt(e.clientX, e.clientY); }
+      if (!drag.moved) {
+        if (drag.ellipseTap) handleEllipseTap(e.clientX, e.clientY, e.shiftKey);
+        else if (drag.arrowTap) handleArrowTap(e.clientX, e.clientY);
+        else placeMarkerAt(e.clientX, e.clientY);
+      }
     };
     window.addEventListener("mousemove", handleMouseMove); window.addEventListener("mouseup", handleMouseUp);
     return () => { window.removeEventListener("mousemove", handleMouseMove); window.removeEventListener("mouseup", handleMouseUp); };
@@ -654,7 +676,8 @@ export default function App() {
   }, [image, zoomAtPoint]);
 
   const handleTouchStart = (e) => {
-    if (!image) return; if (e.touches.length === 2) { e.preventDefault(); beginPinch(e.touches[0], e.touches[1]); return; }
+    if (!image) return;
+    if (e.touches.length === 2) { e.preventDefault(); beginPinch(e.touches[0], e.touches[1]); return; }
     if (e.touches.length === 1 && !pinchRef.current) tapRef.current = beginPointerDrag(e.touches[0].clientX, e.touches[0].clientY);
   };
 
@@ -699,7 +722,12 @@ export default function App() {
         else setSelectedShapeOrArrow({ type: "arrow", id: drag.arrowId });
         return;
       }
-      if (!drag.moved) { const t = e.changedTouches[0]; if (drag.ellipseTap) handleEllipseTap(t.clientX, t.clientY, false); else if (drag.arrowTap) handleArrowTap(t.clientX, t.clientY); else placeMarkerAt(t.clientX, t.clientY); }
+      if (!drag.moved) {
+        const t = e.changedTouches[0];
+        if (drag.ellipseTap) handleEllipseTap(t.clientX, t.clientY, false);
+        else if (drag.arrowTap) handleArrowTap(t.clientX, t.clientY);
+        else placeMarkerAt(t.clientX, t.clientY);
+      }
     }
   };
 
@@ -926,14 +954,36 @@ export default function App() {
                     <span style={{ fontSize:11, fontWeight:"bold", padding:"2px 8px", borderRadius:20, flexShrink:0, minWidth:24, textAlign:"center", background: m.type==="top" ? "#3b82f6" : m.type==="start" ? "#22c55e" : m.type==="clip" ? "#facc15" : m.type==="duo" ? "#ec4899" : "white", color: (m.type==="clip"||m.type==="hold") ? "#111" : "white" }}>
                       {m.label}
                     </span>
-                    <select value={m.type} onChange={e => { const snap = makeSnapshot(); const next = markers.map(x => x.id === m.id ? { ...x, type: e.target.value } : x); setHistory(prev => [...prev, snap]); if (lockNumber) { setMarkers(next); } else { const { updatedList, nextHold } = reindexMarkers(next); setMarkers(updatedList); setNextHoldNumber(nextHold); } }} style={{ background:"#333", color:"white", border:"1px solid #444", borderRadius:6, fontSize:11, padding:"2px 4px" }}>
+                    <select
+                      value={m.type}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        handleMarkerTypeChange(m.id, e.target.value);
+                      }}
+                      style={{ background:"#333", color:"white", border:"1px solid #444", borderRadius:6, fontSize:11, padding:"2px 4px" }}
+                    >
                       {["hold","start","top","clip","duo"].map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                     <span style={{ fontSize:11, color:"#666", flex:1 }}>({Math.round(m.x)}, {Math.round(m.y)})</span>
-                    <button onClick={() => handleDeleteMarker(m.id)} style={{ background:"none", border:"none", color:"#ef4444", fontSize:14, cursor:"pointer", padding:"0 6px", flexShrink:0 }}>✕</button>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDeleteMarker(m.id);
+                      }}
+                      style={{ background:"none", border:"none", color:"#ef4444", fontSize:14, cursor:"pointer", padding:"0 6px", flexShrink:0 }}
+                    >✕</button>
                   </div>
                   {idx < markers.length - 1 && (
-                    <button onClick={() => insertMarkerAt(idx + 1)} style={{ alignSelf: "center", width: "85%", padding: "4px 0", fontSize: 11, fontWeight: "bold", background: "rgba(59, 130, 246, 0.15)", color: "#93c5fd", border: "1px dashed rgba(59, 130, 246, 0.4)", borderRadius: 6, cursor: "pointer" }}>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        insertMarkerAt(idx + 1);
+                      }}
+                      style={{ alignSelf: "center", width: "85%", padding: "4px 0", fontSize: 11, fontWeight: "bold", background: "rgba(59, 130, 246, 0.15)", color: "#93c5fd", border: "1px dashed rgba(59, 130, 246, 0.4)", borderRadius: 6, cursor: "pointer" }}
+                    >
                       ➕ 이 사이에 새 홀드 삽입
                     </button>
                   )}
@@ -946,7 +996,7 @@ export default function App() {
 
       {showHelp && (
         <div onClick={() => setShowHelp(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
-          <div onClick={e => e.stopPropagation()} style={{ position:"relative", background:"#111", borderRadius:12, padding:20, maxWidth:420, maxHeight:"80vh", overflowY:"auto", color:"white", border:"1px solid #333" }}>
+          <div onClick={e => e.stopPropagation()} style={{ position:"relative", background:"#111", borderRadius:12, padding:20, maxWidth:420, maxHeight:"80vh", overflowY:"auto", color:"white", border:"1px solid #333", textAlign: "left"}}>
             <button onClick={() => setShowHelp(false)} style={{ position:"absolute", top:12, right:12, background:"none", border:"none", color:"#aaa", fontSize:18, cursor:"pointer", lineHeight:1 }}>✕</button>
             <div style={{ fontSize:16, fontWeight:"bold", marginBottom:14, color:"#3b82f6" }}>❓ 도움말</div>
 
