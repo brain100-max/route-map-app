@@ -9,6 +9,22 @@ const TAP_MOVE_THRESHOLD = 10;
 const MOUSE_DRAG_THRESHOLD = 5;
 const MIN_SHAPE_RADIUS = 4;
 const HANDLE_SCREEN_RADIUS = 5;
+const LABEL_MIN_FONT_SIZE = 12;
+const LABEL_MAX_FONT_SIZE = 40;
+const DEFAULT_LABEL_FONT_SIZE = 20;
+const LABEL_PADDING_X = 15;
+const LABEL_PADDING_Y = 9;
+const LABEL_LINE_HEIGHT = 1.25;
+const LABEL_BORDER_RADIUS = 14;
+const MARKER_MODES = ["hold", "start", "top", "clip", "duo"];
+const MARKER_PICKER_ORDER = ["hold", "duo", "top", "start", "clip"];
+const MARKER_MODE_META = {
+  hold: { label: "홀드", icon: "⚪", color: "#ffffff", text: "#111111" },
+  start: { label: "START", icon: "🟢", color: "#22c55e", text: "#ffffff" },
+  top: { label: "TOP", icon: "🔵", color: "#3b82f6", text: "#ffffff" },
+  clip: { label: "클립", icon: "🟡", color: "#facc15", text: "#111111" },
+  duo: { label: "듀오", icon: "🩷", color: "#ec4899", text: "#ffffff" },
+};
 
 const COLORS = {
   hold:  { text: "#000000", stroke: "#ff0000" }, 
@@ -80,7 +96,70 @@ function drawShapeHandles(ctx, shape, s) {
   });
 }
 
-function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shapes = [], previewShape = null, selectedShapeId = null, ellipseCenter = null, ellipseStrokeWidth = 1.5, arrows = [], previewArrow = null, arrowCenter = null, arrowStrokeWidth = 1.5, applyMinFontSize = false) {
+function getLabelLines(text) {
+  const normalized = String(text ?? "").replace(/\r\n/g, "\n");
+  return normalized.split("\n");
+}
+
+function getLabelMeasureCtx() {
+  if (!getLabelMeasureCtx.cached) {
+    const canvas = document.createElement("canvas");
+    getLabelMeasureCtx.cached = canvas.getContext("2d");
+  }
+  return getLabelMeasureCtx.cached;
+}
+
+function measureLabel(label, fontScale = 1, customCtx = null) {
+  const measureCtx = customCtx || getLabelMeasureCtx();
+  const baseFontSize = Math.max(LABEL_MIN_FONT_SIZE, Number(label.fontSize) || DEFAULT_LABEL_FONT_SIZE);
+  const fontSize = baseFontSize * fontScale;
+  const lines = getLabelLines(label.text);
+  measureCtx.font = `600 ${fontSize}px sans-serif`;
+  const maxTextWidth = lines.reduce((max, line) => Math.max(max, measureCtx.measureText(line || " ").width), 0);
+  const lineHeight = fontSize * LABEL_LINE_HEIGHT;
+  const textBlockHeight = lineHeight * Math.max(1, lines.length);
+  const width = maxTextWidth + LABEL_PADDING_X * 2 * fontScale;
+  const height = textBlockHeight + LABEL_PADDING_Y * 2 * fontScale;
+  return { fontSize, lines, lineHeight, textBlockHeight, width, height };
+}
+
+function drawLabelCard(ctx, label, scaleFactor, selected, customCtx = null) {
+  const metrics = measureLabel(label, scaleFactor, customCtx);
+  const x = label.x * scaleFactor;
+  const y = label.y * scaleFactor;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.22)";
+  ctx.shadowBlur = Math.max(3, 8 * scaleFactor);
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.roundRect(x, y, metrics.width, metrics.height, LABEL_BORDER_RADIUS * scaleFactor);
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+
+  if (selected) {
+    ctx.strokeStyle = "#2563eb";
+    ctx.lineWidth = Math.max(1.5, 2 * scaleFactor);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "#111111";
+  ctx.font = `600 ${metrics.fontSize}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const centerX = x + metrics.width / 2;
+  const firstLineY = y + metrics.height / 2 - (metrics.textBlockHeight / 2) + (metrics.lineHeight / 2);
+  metrics.lines.forEach((line, idx) => {
+    ctx.fillText(
+      line || " ",
+      centerX,
+      firstLineY + idx * metrics.lineHeight
+    );
+  });
+  ctx.restore();
+}
+
+function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shapes = [], previewShape = null, selectedShapeId = null, ellipseCenter = null, ellipseStrokeWidth = 1.5, arrows = [], previewArrow = null, arrowCenter = null, arrowStrokeWidth = 1.5, applyMinFontSize = false, labels = [], selectedLabelId = null, labelMeasureCtx = null) {
   const s = scale * dpr; const sizeRatio = markerSize / MARKER_RADIUS;
   const rawFs = FONT_SIZE * sizeRatio * s;
   const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
@@ -155,6 +234,10 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shape
     ctx.beginPath(); ctx.arc(arrowCenter.x * s, arrowCenter.y * s, startRadius, 0, Math.PI * 2);
     ctx.fillStyle = "#ff4500"; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = startBorderWidth; ctx.stroke();
   }
+
+  labels.forEach(label => {
+    drawLabelCard(ctx, label, s, label.id === selectedLabelId, labelMeasureCtx);
+  });
 }
 
 function getTouchDistance(t1, t2) { const dx = t1.clientX - t2.clientX; const dy = t1.clientY - t2.clientY; return Math.hypot(dx, dy); }
@@ -168,17 +251,21 @@ export default function App() {
   const [markers, setMarkers] = useState([]);
   const [shapes, setShapes] = useState([]);
   const [arrows, setArrows] = useState([]);
+  const [labels, setLabels] = useState([]);
   const [previewShape, setPreviewShape] = useState(null);
   const [previewArrow, setPreviewArrow] = useState(null);
   const [ellipseCenter, setEllipseCenter] = useState(null);
   const [arrowCenter, setArrowCenter] = useState(null);
   const [selectedShapeOrArrow, setSelectedShapeOrArrow] = useState(null);
+  const [selectedLabelId, setSelectedLabelId] = useState(null);
   const [nextHoldNumber, setNextHoldNumber] = useState(1);
   const [mode, setMode] = useState("hold");
+  const [markerMode, setMarkerMode] = useState("hold");
   const [lockNumber, setLockNumber] = useState(false);
   const [history, setHistory] = useState([]);
   const [scale, setScale] = useState(1);
   const [markerSize, setMarkerSize] = useState(14);
+  const [labelFontSize, setLabelFontSize] = useState(DEFAULT_LABEL_FONT_SIZE);
   const [ellipseStrokeWidth, setEllipseStrokeWidth] = useState(1.5);
   const [arrowStrokeWidth, setArrowStrokeWidth] = useState(1.5);
   const [tab, setTab] = useState("place");
@@ -186,13 +273,17 @@ export default function App() {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [showHelp, setShowHelp] = useState(false);
   const [showExportSheet, setShowExportSheet] = useState(false);
+  const [showMarkerSheet, setShowMarkerSheet] = useState(false);
+  const [labelEditor, setLabelEditor] = useState({ open: false, id: null, x: 0, y: 0, text: "" });
 
   const containerRef = useRef(null); const viewportRef = useRef(null); const canvasRef = useRef(null); const imgRef = useRef(null);
   const transformRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
-  const markersRef = useRef(markers); const shapesRef = useRef(shapes); const arrowsRef = useRef(arrows);
+  const markersRef = useRef(markers); const shapesRef = useRef(shapes); const arrowsRef = useRef(arrows); const labelsRef = useRef(labels);
   const nextHoldNumberRef = useRef(nextHoldNumber); const modeRef = useRef(mode);
   const ellipseCenterRef = useRef(null); const arrowCenterRef = useRef(null);
   const pinchRef = useRef(null); const tapRef = useRef(null); const mouseDragRef = useRef(null);
+  const labelLongPressRef = useRef(null);
+  const labelFontSliderDragRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
 
   // 배치 화면(캔버스)이 언마운트되는 탭으로 전환될 때, 완료되지 않은 드래그/탭 제스처가
@@ -212,15 +303,28 @@ export default function App() {
   useEffect(() => { markersRef.current = markers; }, [markers]);
   useEffect(() => { shapesRef.current = shapes; }, [shapes]);
   useEffect(() => { arrowsRef.current = arrows; }, [arrows]);
+  useEffect(() => { labelsRef.current = labels; }, [labels]);
   useEffect(() => { nextHoldNumberRef.current = nextHoldNumber; }, [nextHoldNumber]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { ellipseCenterRef.current = ellipseCenter; }, [ellipseCenter]);
   useEffect(() => { arrowCenterRef.current = arrowCenter; }, [arrowCenter]);
+  useEffect(() => {
+    if (!selectedLabelId) return;
+    const selected = labels.find(label => label.id === selectedLabelId);
+    if (!selected) return;
+    const selectedSize = Math.max(LABEL_MIN_FONT_SIZE, Number(selected.fontSize) || DEFAULT_LABEL_FONT_SIZE);
+    if (selectedSize !== labelFontSize) setLabelFontSize(selectedSize);
+  }, [selectedLabelId, labels, labelFontSize]);
+  useEffect(() => {
+    if (mode !== "label" || !selectedLabelId) labelFontSliderDragRef.current = false;
+  }, [mode, selectedLabelId]);
 
   useEffect(() => {
     if (mode !== "ellipse") { setEllipseCenter(null); setPreviewShape(null); }
     if (mode !== "arrow") { setArrowCenter(null); setPreviewArrow(null); }
+    if (MARKER_MODES.includes(mode)) setMarkerMode(mode);
     setSelectedShapeOrArrow(null);
+    setShowMarkerSheet(false);
   }, [mode]);
 
   useEffect(() => {
@@ -297,15 +401,17 @@ export default function App() {
       previewArrow,
       arrowCenter,
       arrowStrokeWidth,
-      true
+      true,
+      labels,
+      selectedLabelId
     );
-  }, [markers, shapes, previewShape, ellipseCenter, scale, image, markerSize, ellipseStrokeWidth, arrowStrokeWidth, imgSize, mode, arrows, previewArrow, arrowCenter, selectedShapeOrArrow, tab]);
+  }, [markers, shapes, previewShape, ellipseCenter, scale, image, markerSize, ellipseStrokeWidth, arrowStrokeWidth, imgSize, mode, arrows, previewArrow, arrowCenter, selectedShapeOrArrow, tab, labels, selectedLabelId]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0]; if (!file) return;
     const url = URL.createObjectURL(file); const img = new Image();
     img.onload = () => {
-      setImgSize({ w: img.naturalWidth, h: img.naturalHeight }); setImage(url); setMarkers([]); setShapes([]); setArrows([]); setPreviewShape(null); setPreviewArrow(null); setEllipseCenter(null); setArrowCenter(null); setHistory([]); setNextHoldNumber(1); resetTransform();
+      setImgSize({ w: img.naturalWidth, h: img.naturalHeight }); setImage(url); setMarkers([]); setShapes([]); setArrows([]); setLabels([]); setPreviewShape(null); setPreviewArrow(null); setEllipseCenter(null); setArrowCenter(null); setSelectedLabelId(null); setHistory([]); setNextHoldNumber(1); resetTransform();
     };
     img.src = url;
   };
@@ -390,7 +496,11 @@ export default function App() {
   }, [handleContainerResize]);
 
   const makeSnapshot = useCallback(() => ({
-    markers: markersRef.current.map(m => ({ ...m })), shapes: shapesRef.current.map(s => ({ ...s })), arrows: arrowsRef.current.map(a => ({ ...a })), nextHoldNumber: nextHoldNumberRef.current,
+    markers: markersRef.current.map(m => ({ ...m })),
+    shapes: shapesRef.current.map(s => ({ ...s })),
+    arrows: arrowsRef.current.map(a => ({ ...a })),
+    labels: labelsRef.current.map(l => ({ ...l })),
+    nextHoldNumber: nextHoldNumberRef.current,
   }), []);
 
   const clientToImageCoords = useCallback((clientX, clientY, allowOutside = false) => {
@@ -429,6 +539,24 @@ export default function App() {
     return null;
   }, [clientToImageCoords]);
 
+  const findLabelAt = useCallback((clientX, clientY) => {
+    const coords = clientToImageCoords(clientX, clientY); if (!coords) return null;
+    const list = labelsRef.current;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const label = list[i];
+      const metrics = measureLabel(label);
+      if (
+        coords.x >= label.x &&
+        coords.x <= label.x + metrics.width &&
+        coords.y >= label.y &&
+        coords.y <= label.y + metrics.height
+      ) {
+        return label;
+      }
+    }
+    return null;
+  }, [clientToImageCoords]);
+
   const findHandleAt = useCallback((clientX, clientY) => {
     if (selectedShapeOrArrow?.type !== "shape") return null;
     const canvas = canvasRef.current; if (!canvas) return null;
@@ -454,6 +582,58 @@ export default function App() {
     setArrows(prev => prev.map(a => a.id === arrowId ? { ...a, x1: coords.x + offsetX1, y1: coords.y + offsetY1, x2: coords.x + offsetX2, y2: coords.y + offsetY2 } : a));
   }, [clientToImageCoords]);
 
+  const moveLabelTo = useCallback((labelId, clientX, clientY, offsetX = 0, offsetY = 0) => {
+    const coords = clientToImageCoords(clientX, clientY); if (!coords) return;
+    setLabels(prev => prev.map(l => l.id === labelId ? { ...l, x: coords.x + offsetX, y: coords.y + offsetY } : l));
+  }, [clientToImageCoords]);
+
+  const openLabelEditorForNew = useCallback((x, y) => {
+    setLabelEditor({ open: true, id: null, x, y, text: "" });
+  }, []);
+
+  const openLabelEditorForExisting = useCallback((label) => {
+    if (!label) return;
+    setSelectedLabelId(label.id);
+    setLabelEditor({ open: true, id: label.id, x: label.x, y: label.y, text: label.text ?? "" });
+  }, []);
+
+  const saveLabelEditor = useCallback(() => {
+    const trimmed = String(labelEditor.text ?? "").trim();
+    setLabelEditor(prev => ({ ...prev, open: false }));
+    if (!trimmed) return;
+    const snapshot = makeSnapshot();
+    setHistory(prev => [...prev, snapshot]);
+    if (labelEditor.id) {
+      setLabels(prev => prev.map(label => label.id === labelEditor.id ? { ...label, text: labelEditor.text } : label));
+      setSelectedLabelId(labelEditor.id);
+      return;
+    }
+    const newLabelId = generateUUID();
+    setLabels(prev => [...prev, {
+      id: newLabelId,
+      x: labelEditor.x,
+      y: labelEditor.y,
+      text: labelEditor.text,
+      fontSize: labelFontSize,
+    }]);
+    setSelectedLabelId(newLabelId);
+  }, [labelEditor, makeSnapshot, labelFontSize]);
+
+  const handleLabelFontSizeChange = useCallback((value) => {
+    const nextSize = Number(value);
+    setLabelFontSize(nextSize);
+    if (!selectedLabelId) return;
+    if (!labelFontSliderDragRef.current) {
+      setHistory(prev => [...prev, makeSnapshot()]);
+      labelFontSliderDragRef.current = true;
+    }
+    setLabels(prev => prev.map(label => label.id === selectedLabelId ? { ...label, fontSize: nextSize } : label));
+  }, [selectedLabelId, makeSnapshot]);
+
+  const handleLabelFontSizeCommit = useCallback(() => {
+    labelFontSliderDragRef.current = false;
+  }, []);
+
   const resizeShapeByHandle = useCallback((shapeId, handleId, clientX, clientY, origin) => {
     const coords = clientToImageCoords(clientX, clientY, true); if (!coords) return;
     const { cx, cy } = origin; let rx = origin.rx; let ry = origin.ry;
@@ -472,7 +652,7 @@ export default function App() {
       }
       setEllipseCenter(null); setPreviewShape(null); return;
     }
-    const clickedShape = findShapeAt(clientX, clientY); if (clickedShape) { setSelectedShapeOrArrow({ type: "shape", id: clickedShape.id }); return; }
+    const clickedShape = findShapeAt(clientX, clientY); if (clickedShape) { setSelectedShapeOrArrow({ type: "shape", id: clickedShape.id }); setSelectedLabelId(null); return; }
     if (findHandleAt(clientX, clientY)) return; setEllipseCenter({ x: coords.x, y: coords.y });
   }, [clientToImageCoords, makeSnapshot, findHandleAt, findShapeAt]);
 
@@ -485,13 +665,29 @@ export default function App() {
       }
       setArrowCenter(null); setPreviewArrow(null); return;
     }
-    const clickedArrow = findArrowAt(clientX, clientY); if (clickedArrow) { setSelectedShapeOrArrow({ type: "arrow", id: clickedArrow.id }); return; }
+    const clickedArrow = findArrowAt(clientX, clientY); if (clickedArrow) { setSelectedShapeOrArrow({ type: "arrow", id: clickedArrow.id }); setSelectedLabelId(null); return; }
     setArrowCenter({ x: coords.x, y: coords.y });
   }, [clientToImageCoords, makeSnapshot, findArrowAt]);
 
+  const handleLabelTap = useCallback((clientX, clientY) => {
+    const clickedLabel = findLabelAt(clientX, clientY);
+    if (clickedLabel) {
+      setSelectedLabelId(clickedLabel.id);
+      setSelectedShapeOrArrow(null);
+      return;
+    }
+    const coords = clientToImageCoords(clientX, clientY);
+    if (!coords) return;
+    setSelectedLabelId(null);
+    setSelectedShapeOrArrow(null);
+    openLabelEditorForNew(coords.x, coords.y);
+  }, [findLabelAt, clientToImageCoords, openLabelEditorForNew]);
+
   const placeMarkerAt = useCallback((clientX, clientY) => {
-    if (!image || mode === "ellipse" || mode === "arrow") return;
+    if (!image || mode === "ellipse" || mode === "arrow" || mode === "label") return;
     const coords = clientToImageCoords(clientX, clientY); if (!coords) return;
+    setSelectedLabelId(null);
+    setSelectedShapeOrArrow(null);
     const { x, y } = coords; const snapshot = makeSnapshot();
     const nHold = nextHoldNumberRef.current;
 
@@ -584,13 +780,34 @@ export default function App() {
   };
 
   const handleDeleteSelectedShapeOrArrow = () => {
-    if (!selectedShapeOrArrow) return; const snapshot = makeSnapshot(); setHistory(prev => [...prev, snapshot]);
+    if (!selectedShapeOrArrow && !selectedLabelId) return;
+    const snapshot = makeSnapshot();
+    setHistory(prev => [...prev, snapshot]);
+    if (selectedLabelId) {
+      setLabels(prev => prev.filter(label => label.id !== selectedLabelId));
+      setSelectedLabelId(null);
+      return;
+    }
     if (selectedShapeOrArrow.type === "shape") setShapes(prev => prev.filter(s => s.id !== selectedShapeOrArrow.id));
     else if (selectedShapeOrArrow.type === "arrow") setArrows(prev => prev.filter(a => a.id !== selectedShapeOrArrow.id));
     setSelectedShapeOrArrow(null);
   };
 
   const beginPointerDrag = useCallback((clientX, clientY) => {
+    const hitLabel = findLabelAt(clientX, clientY);
+    if (hitLabel) {
+      const coords = clientToImageCoords(clientX, clientY);
+      return {
+        type: "label",
+        labelId: hitLabel.id,
+        startX: clientX,
+        startY: clientY,
+        offsetX: coords ? hitLabel.x - coords.x : 0,
+        offsetY: coords ? hitLabel.y - coords.y : 0,
+        moved: false,
+        snapshot: makeSnapshot(),
+      };
+    }
     const hitMarker = findMarkerAt(clientX, clientY);
     if (hitMarker) {
       const coords = clientToImageCoords(clientX, clientY);
@@ -618,12 +835,24 @@ export default function App() {
       }
       return { type: "pan", startX: clientX, startY: clientY, startPan: { ...transformRef.current.pan }, moved: false, arrowTap: true };
     }
+    if (modeRef.current === "label") {
+      return { type: "pan", startX: clientX, startY: clientY, startPan: { ...transformRef.current.pan }, moved: false, labelTap: true };
+    }
     return { type: "pan", startX: clientX, startY: clientY, startPan: { ...transformRef.current.pan }, moved: false };
-  }, [findMarkerAt, findShapeAt, findHandleAt, findArrowAt, makeSnapshot, clientToImageCoords]);
+  }, [findLabelAt, findMarkerAt, findShapeAt, findHandleAt, findArrowAt, makeSnapshot, clientToImageCoords]);
 
   const handleMouseDown = (e) => {
     if (!image || e.button !== 0) return;
+    setShowMarkerSheet(false);
     e.preventDefault(); mouseDragRef.current = beginPointerDrag(e.clientX, e.clientY);
+  };
+
+  const handleCanvasDoubleClick = (e) => {
+    if (!image) return;
+    const hitLabel = findLabelAt(e.clientX, e.clientY);
+    if (!hitLabel) return;
+    e.preventDefault();
+    openLabelEditorForExisting(hitLabel);
   };
 
   const zoomAtPoint = useCallback((clientX, clientY, nextZoom) => {
@@ -639,7 +868,8 @@ export default function App() {
       const dx = e.clientX - drag.startX; const dy = e.clientY - drag.startY;
       if (!drag.moved && Math.hypot(dx, dy) >= MOUSE_DRAG_THRESHOLD) { drag.moved = true; setIsDragging(true); }
       if (!drag.moved) return;
-      if (drag.type === "marker") moveMarkerTo(drag.markerId, e.clientX, e.clientY, drag.offsetX, drag.offsetY);
+      if (drag.type === "label") moveLabelTo(drag.labelId, e.clientX, e.clientY, drag.offsetX, drag.offsetY);
+      else if (drag.type === "marker") moveMarkerTo(drag.markerId, e.clientX, e.clientY, drag.offsetX, drag.offsetY);
       else if (drag.type === "resize-shape") resizeShapeByHandle(drag.shapeId, drag.handleId, e.clientX, e.clientY, drag.origin);
       else if (drag.type === "shape") moveShapeTo(drag.shapeId, e.clientX, e.clientY, drag.offsetX, drag.offsetY);
       else if (drag.type === "arrow") moveArrowTo(drag.arrowId, e.clientX, e.clientY, drag.offsetX1, drag.offsetY1, drag.offsetX2, drag.offsetY2);
@@ -648,26 +878,41 @@ export default function App() {
     const handleMouseUp = (e) => {
       const drag = mouseDragRef.current;
       if (!drag) return; mouseDragRef.current = null; setIsDragging(false);
+      if (drag.type === "label") {
+        if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
+        else {
+          setSelectedLabelId(drag.labelId);
+          setSelectedShapeOrArrow(null);
+        }
+        return;
+      }
       if (drag.type === "marker" || drag.type === "resize-shape") { if (drag.moved) setHistory(prev => [...prev, drag.snapshot]); return; }
       if (drag.type === "shape") {
         if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
-        else setSelectedShapeOrArrow({ type: "shape", id: drag.shapeId });
+        else {
+          setSelectedShapeOrArrow({ type: "shape", id: drag.shapeId });
+          setSelectedLabelId(null);
+        }
         return;
       }
       if (drag.type === "arrow") {
         if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
-        else setSelectedShapeOrArrow({ type: "arrow", id: drag.arrowId });
+        else {
+          setSelectedShapeOrArrow({ type: "arrow", id: drag.arrowId });
+          setSelectedLabelId(null);
+        }
         return;
       }
       if (!drag.moved) {
         if (drag.ellipseTap) handleEllipseTap(e.clientX, e.clientY, e.shiftKey);
         else if (drag.arrowTap) handleArrowTap(e.clientX, e.clientY);
+        else if (drag.labelTap) handleLabelTap(e.clientX, e.clientY);
         else placeMarkerAt(e.clientX, e.clientY);
       }
     };
     window.addEventListener("mousemove", handleMouseMove); window.addEventListener("mouseup", handleMouseUp);
     return () => { window.removeEventListener("mousemove", handleMouseMove); window.removeEventListener("mouseup", handleMouseUp); };
-  }, [placeMarkerAt, handleEllipseTap, handleArrowTap, moveMarkerTo, moveShapeTo, moveArrowTo, resizeShapeByHandle]);
+  }, [placeMarkerAt, handleEllipseTap, handleArrowTap, handleLabelTap, moveLabelTo, moveMarkerTo, moveShapeTo, moveArrowTo, resizeShapeByHandle]);
 
   useEffect(() => {
     const preventPageZoom = (e) => { if (e.ctrlKey) e.preventDefault(); }; document.addEventListener("wheel", preventPageZoom, { passive: false });
@@ -680,22 +925,49 @@ export default function App() {
     viewport.addEventListener("wheel", handleWheel, { passive: false }); return () => viewport.removeEventListener("wheel", handleWheel);
   }, [image, zoomAtPoint]);
 
+  const clearLabelLongPress = useCallback(() => {
+    if (!labelLongPressRef.current) return;
+    clearTimeout(labelLongPressRef.current);
+    labelLongPressRef.current = null;
+  }, []);
+
+  useEffect(() => () => clearLabelLongPress(), [clearLabelLongPress]);
+
   const handleTouchStart = (e) => {
     if (!image) return;
-    if (e.touches.length === 2) { e.preventDefault(); beginPinch(e.touches[0], e.touches[1]); return; }
-    if (e.touches.length === 1 && !pinchRef.current) tapRef.current = beginPointerDrag(e.touches[0].clientX, e.touches[0].clientY);
+    setShowMarkerSheet(false);
+    if (e.touches.length === 2) { clearLabelLongPress(); e.preventDefault(); beginPinch(e.touches[0], e.touches[1]); return; }
+    if (e.touches.length === 1 && !pinchRef.current) {
+      const touch = e.touches[0];
+      const drag = beginPointerDrag(touch.clientX, touch.clientY);
+      tapRef.current = drag;
+      if (drag?.type === "label") {
+        clearLabelLongPress();
+        labelLongPressRef.current = setTimeout(() => {
+          if (tapRef.current && tapRef.current.type === "label" && !tapRef.current.moved) {
+            const targetLabel = labelsRef.current.find(label => label.id === tapRef.current.labelId);
+            if (targetLabel) openLabelEditorForExisting(targetLabel);
+            tapRef.current = null;
+            setIsDragging(false);
+          }
+        }, 550);
+      }
+    }
   };
 
   const handleTouchMove = (e) => {
-    if (!image) return; if (e.touches.length === 2) { e.preventDefault(); applyPinch(e.touches[0], e.touches[1]); return; }
+    if (!image) return; if (e.touches.length === 2) { clearLabelLongPress(); e.preventDefault(); applyPinch(e.touches[0], e.touches[1]); return; }
     const drag = tapRef.current;
     if (e.touches.length === 1 && drag && !pinchRef.current) {
       e.preventDefault(); const t = e.touches[0]; const dx = t.clientX - drag.startX; const dy = t.clientY - drag.startY;
       const moveThreshold = (drag.arrowTap || drag.ellipseTap) ? 24 : TAP_MOVE_THRESHOLD;
-      if (!drag.moved && Math.hypot(dx, dy) > moveThreshold) { drag.moved = true; setIsDragging(true); }
+      if (!drag.moved && Math.hypot(dx, dy) > moveThreshold) { drag.moved = true; clearLabelLongPress(); setIsDragging(true); }
       if (!drag.moved) return;
       
-      if (drag.type === "marker") { 
+      if (drag.type === "label") {
+        moveLabelTo(drag.labelId, t.clientX, t.clientY, drag.offsetX, drag.offsetY);
+      }
+      else if (drag.type === "marker") { 
         moveMarkerTo(drag.markerId, t.clientX, t.clientY, drag.offsetX, drag.offsetY); 
       }
       else if (drag.type === "resize-shape") resizeShapeByHandle(drag.shapeId, drag.handleId, t.clientX, t.clientY, drag.origin);
@@ -706,6 +978,7 @@ export default function App() {
   };
 
   const handleTouchEnd = (e) => {
+    clearLabelLongPress();
     if (!image) return; 
     if (pinchRef.current) { 
       e.preventDefault(); 
@@ -716,21 +989,36 @@ export default function App() {
     }
     if (tapRef.current && e.changedTouches.length === 1) {
       const drag = tapRef.current; tapRef.current = null; setIsDragging(false); e.preventDefault();
+      if (drag.type === "label") {
+        if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
+        else {
+          setSelectedLabelId(drag.labelId);
+          setSelectedShapeOrArrow(null);
+        }
+        return;
+      }
       if (drag.type === "marker" || drag.type === "resize-shape") { if (drag.moved) setHistory(prev => [...prev, drag.snapshot]); return; }
       if (drag.type === "shape") {
         if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
-        else setSelectedShapeOrArrow({ type: "shape", id: drag.shapeId });
+        else {
+          setSelectedShapeOrArrow({ type: "shape", id: drag.shapeId });
+          setSelectedLabelId(null);
+        }
         return;
       }
       if (drag.type === "arrow") {
         if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
-        else setSelectedShapeOrArrow({ type: "arrow", id: drag.arrowId });
+        else {
+          setSelectedShapeOrArrow({ type: "arrow", id: drag.arrowId });
+          setSelectedLabelId(null);
+        }
         return;
       }
       if (!drag.moved) {
         const t = e.changedTouches[0];
         if (drag.ellipseTap) handleEllipseTap(t.clientX, t.clientY, false);
         else if (drag.arrowTap) handleArrowTap(t.clientX, t.clientY);
+        else if (drag.labelTap) handleLabelTap(t.clientX, t.clientY);
         else placeMarkerAt(t.clientX, t.clientY);
       }
     }
@@ -738,6 +1026,7 @@ export default function App() {
 
   const beginPinch = (t1, t2) => {
     pinchRef.current = { startDistance: getTouchDistance(t1, t2), startZoom: transformRef.current.zoom, startPan: { ...transformRef.current.pan }, startMid: getTouchMidpoint(t1, t2) };
+    clearLabelLongPress();
     tapRef.current = null; mouseDragRef.current = null; setPreviewShape(null); setPreviewArrow(null); setIsDragging(false);
   };
 
@@ -763,8 +1052,8 @@ export default function App() {
 
   const handleUndo = () => {
     if (history.length === 0) return; const snapshot = history[history.length - 1];
-    setMarkers(snapshot.markers); setShapes(snapshot.shapes ?? []); setArrows(snapshot.arrows ?? []); setNextHoldNumber(snapshot.nextHoldNumber);
-    setPreviewShape(null); setPreviewArrow(null); setHistory(h => h.slice(0, -1)); setSelectedShapeOrArrow(null);
+    setMarkers(snapshot.markers); setShapes(snapshot.shapes ?? []); setArrows(snapshot.arrows ?? []); setLabels(snapshot.labels ?? []); setNextHoldNumber(snapshot.nextHoldNumber);
+    setPreviewShape(null); setPreviewArrow(null); setHistory(h => h.slice(0, -1)); setSelectedShapeOrArrow(null); setSelectedLabelId(null);
   };
 
   const handleExportCSV = () => {
@@ -783,7 +1072,7 @@ export default function App() {
     if (!imgRef.current) return; const offscreen = document.createElement("canvas"); offscreen.width = imgSize.w; offscreen.height = imgSize.h;
     const ctx = offscreen.getContext("2d"); ctx.drawImage(imgRef.current, 0, 0);
     const overlay = document.createElement("canvas"); overlay.width = imgSize.w; overlay.height = imgSize.h;
-    drawAll(overlay.getContext("2d"), markers, 1, markerSize, 1, shapesRef.current, null, false, null, scale > 0 ? ellipseStrokeWidth / scale : ellipseStrokeWidth, arrowsRef.current, null, null, scale > 0 ? arrowStrokeWidth / scale : arrowStrokeWidth);
+    drawAll(overlay.getContext("2d"), markers, 1, markerSize, 1, shapesRef.current, null, false, null, scale > 0 ? ellipseStrokeWidth / scale : ellipseStrokeWidth, arrowsRef.current, null, null, scale > 0 ? arrowStrokeWidth / scale : arrowStrokeWidth, false, labelsRef.current, null);
     ctx.drawImage(overlay, 0, 0); 
     const a = document.createElement("a"); const url = offscreen.toDataURL("image/png");
     a.href = url; a.download = "route_map.png"; a.click();
@@ -793,7 +1082,7 @@ export default function App() {
     if (!imgRef.current) return; const offscreen = document.createElement("canvas"); offscreen.width = imgSize.w; offscreen.height = imgSize.h;
     const ctx = offscreen.getContext("2d"); ctx.drawImage(imgRef.current, 0, 0);
     const overlay = document.createElement("canvas"); overlay.width = imgSize.w; overlay.height = imgSize.h;
-    drawAll(overlay.getContext("2d"), markers, 1, markerSize, 1, shapesRef.current, null, false, null, scale > 0 ? ellipseStrokeWidth / scale : ellipseStrokeWidth, arrowsRef.current, null, null, scale > 0 ? arrowStrokeWidth / scale : arrowStrokeWidth);
+    drawAll(overlay.getContext("2d"), markers, 1, markerSize, 1, shapesRef.current, null, false, null, scale > 0 ? ellipseStrokeWidth / scale : ellipseStrokeWidth, arrowsRef.current, null, null, scale > 0 ? arrowStrokeWidth / scale : arrowStrokeWidth, false, labelsRef.current, null);
     ctx.drawImage(overlay, 0, 0); 
     const a = document.createElement("a"); const url = offscreen.toDataURL("image/jpeg", 0.92);
     a.href = url; a.download = "route_map.jpg"; a.click();
@@ -804,7 +1093,7 @@ export default function App() {
     const exportCanvas = document.createElement("canvas"); exportCanvas.width = imgSize.w; exportCanvas.height = imgSize.h;
     const ctx = exportCanvas.getContext("2d"); ctx.drawImage(imgRef.current, 0, 0);
     const overlay = document.createElement("canvas"); overlay.width = imgSize.w; overlay.height = imgSize.h;
-    drawAll(overlay.getContext("2d"), markers, 1, markerSize, 1, shapesRef.current, null, false, null, scale > 0 ? ellipseStrokeWidth / scale : ellipseStrokeWidth, arrowsRef.current, null, null, scale > 0 ? arrowStrokeWidth / scale : arrowStrokeWidth);
+    drawAll(overlay.getContext("2d"), markers, 1, markerSize, 1, shapesRef.current, null, false, null, scale > 0 ? ellipseStrokeWidth / scale : ellipseStrokeWidth, arrowsRef.current, null, null, scale > 0 ? arrowStrokeWidth / scale : arrowStrokeWidth, false, labelsRef.current, null);
     ctx.drawImage(overlay, 0, 0);
     const dataUrl = exportCanvas.toDataURL("image/png");
 
@@ -829,6 +1118,10 @@ export default function App() {
   };
 
   const displayW = imgSize.w * scale; const displayH = imgSize.h * scale;
+  const currentMarkerKey = markerMode;
+  const currentMarkerMeta = MARKER_MODE_META[currentMarkerKey];
+  const selectedLabel = selectedLabelId ? labels.find(label => label.id === selectedLabelId) : null;
+  const selectedLabelSize = selectedLabel ? Math.max(LABEL_MIN_FONT_SIZE, Number(selectedLabel.fontSize) || DEFAULT_LABEL_FONT_SIZE) : null;
 
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100dvh", background:"#0a0a0f", color:"white", fontFamily:"sans-serif", overflow:"hidden" }}>
@@ -867,19 +1160,32 @@ export default function App() {
         <div style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}>
           {/* 모드 버튼 */}
           <div style={{ display:"flex", gap:6, padding:"8px 10px", background:"#111", overflowX:"auto", flexShrink:0, zIndex:200, flexWrap:"nowrap" }}>
-            {[
-              { key:"hold",    label:"홀드",   activeColor:"white",   activeText:"#111" },
-              { key:"start",   label:"START",  activeColor:"#22c55e", activeText:"white" },
-              { key:"top",     label:"TOP",    activeColor:"#3b82f6", activeText:"white" },
-              { key:"clip",    label:"클립",   activeColor:"#facc15", activeText:"#111" },
-              { key:"duo",     label:"듀오",   activeColor:"#ec4899", activeText:"white" },
-              { key:"arrow",   label:"➖ 경로선", activeColor:"#ff4500", activeText:"white" },
-              { key:"ellipse", label:"○ 원형", activeColor:"#a3a3a3", activeText:"#111" },
-            ].map(btn => (
-              <button key={btn.key} onClick={() => setMode(btn.key)} style={{ flexShrink:0, padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:"bold", cursor:"pointer", border: mode===btn.key ? "2px solid white" : "2px solid transparent", background: mode===btn.key ? btn.activeColor : "#333", color: mode===btn.key ? btn.activeText : "white", opacity: mode===btn.key ? 1 : 0.55 }}>
-                {btn.label}
-              </button>
-            ))}
+            <button
+              onClick={() => setShowMarkerSheet(true)}
+              style={{
+                flexShrink:0,
+                padding:"6px 12px",
+                borderRadius:8,
+                fontSize:12,
+                fontWeight:"bold",
+                cursor:"pointer",
+                border: MARKER_MODES.includes(mode) ? "2px solid white" : "2px solid transparent",
+                background: currentMarkerMeta.color,
+                color: currentMarkerMeta.text,
+                opacity: MARKER_MODES.includes(mode) ? 1 : 0.85,
+              }}
+            >
+              {currentMarkerMeta.icon} {currentMarkerMeta.label} ▼
+            </button>
+            <button onClick={() => setMode("arrow")} style={{ flexShrink:0, padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:"bold", cursor:"pointer", border: mode==="arrow" ? "2px solid white" : "2px solid transparent", background: mode==="arrow" ? "#ff4500" : "#333", color: "white", opacity: mode==="arrow" ? 1 : 0.75 }}>
+              ➖ 선
+            </button>
+            <button onClick={() => setMode("ellipse")} style={{ flexShrink:0, padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:"bold", cursor:"pointer", border: mode==="ellipse" ? "2px solid white" : "2px solid transparent", background: mode==="ellipse" ? "#a3a3a3" : "#333", color: mode==="ellipse" ? "#111" : "white", opacity: mode==="ellipse" ? 1 : 0.75 }}>
+              ⭕ 원형
+            </button>
+            <button onClick={() => setMode("label")} style={{ flexShrink:0, padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:"bold", cursor:"pointer", border: mode==="label" ? "2px solid white" : "2px solid transparent", background: mode==="label" ? "#f59e0b" : "#333", color: mode==="label" ? "#111" : "white", opacity: mode==="label" ? 1 : 0.75 }}>
+              🏷 제목
+            </button>
             {showLockNumberFeature && (
               <button onClick={() => { if (lockNumber) setNextHoldNumber(getNextHoldFromList(markersRef.current)); setLockNumber(v => !v); }} style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: "bold", cursor: "pointer", border: lockNumber ? "2px solid #fca5a5" : "2px solid transparent", background: lockNumber ? "#dc2626" : "#333", color: "white", opacity: lockNumber ? 1 : 0.55 }}>
                 🔒 번호 고정
@@ -901,6 +1207,21 @@ export default function App() {
                 <input type="range" min={1} max={8} step={0.5} value={arrowStrokeWidth} onChange={e => setArrowStrokeWidth(Number(e.target.value))} style={{ flex:1 }} />
                 <span style={{ fontSize:11, color:"#888", width:28 }}>{arrowStrokeWidth}</span>
               </>
+            ) : mode === "label" ? (
+              <>
+                <span style={{ fontSize:11, color:"#666", whiteSpace:"nowrap" }}>Label 폰트 크기</span>
+                <input
+                  type="range"
+                  min={LABEL_MIN_FONT_SIZE}
+                  max={LABEL_MAX_FONT_SIZE}
+                  value={labelFontSize}
+                  onChange={e => handleLabelFontSizeChange(e.target.value)}
+                  onMouseUp={handleLabelFontSizeCommit}
+                  onTouchEnd={handleLabelFontSizeCommit}
+                  style={{ flex:1 }}
+                />
+                <span style={{ fontSize:11, color:"#888", width:36 }}>{labelFontSize}px</span>
+              </>
             ) : (
               <>
                 <span style={{ fontSize:11, color:"#666", whiteSpace:"nowrap" }}>글자 크기 배율</span>
@@ -914,10 +1235,10 @@ export default function App() {
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 12px", background:"#0a0a0f", borderBottom:"1px solid #1a1a1a", flexShrink:0, zIndex:200 }}>
             <span style={{ fontSize:11, color:"#93c5fd", fontWeight: "bold" }}>
               {/* ⚡ [피드백 반영] 유저 가이드 텍스트 최적화 완료 */}
-              {!image ? "사진을 먼저 열어주세요" : selectedShapeOrArrow ? `🚨 선택됨: [${selectedShapeOrArrow.type === "shape" ? "원형" : "화살표"}]` : mode==="ellipse" ? "클릭: 중심 / 원 선택 후 삭제 가능" : mode==="arrow" ? "클릭: 시작점 ➡️ 끝점 / 선택 시 삭제" : `다음 홀드: #${nextHoldNumber}`}
+              {!image ? "사진을 먼저 열어주세요" : selectedLabelId ? `🚨 선택됨: [Label]   ${selectedLabelSize ?? labelFontSize}px` : selectedShapeOrArrow ? `🚨 선택됨: [${selectedShapeOrArrow.type === "shape" ? "원형" : "화살표"}]` : mode==="ellipse" ? "클릭: 중심 / 원 선택 후 삭제 가능" : mode==="arrow" ? "클릭: 시작점 ➡️ 끝점 / 선택 시 삭제" : mode==="label" ? "터치: Label 생성 / 더블클릭·길게누르기: 편집" : `다음 홀드: #${nextHoldNumber}`}
             </span>
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-              {selectedShapeOrArrow && (
+              {(selectedShapeOrArrow || selectedLabelId) && (
                 <button onClick={handleDeleteSelectedShapeOrArrow} style={{ fontSize:11, padding:"4px 10px", borderRadius:6, border:"none", background:"#ef4444", color:"white", fontWeight:"bold", cursor:"pointer" }}>🗑️ 선택 삭제</button>
               )}
               {Math.abs(zoom - FIT_ZOOM) > 0.001 && (
@@ -928,7 +1249,7 @@ export default function App() {
           </div>
 
           {/* 사진 영역 */}
-          <div ref={(node) => { viewportRef.current = node; containerRef.current = node; }} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onTouchCancel={handleTouchEnd} onMouseDown={handleMouseDown} style={{ flex: 1, minHeight: 0, position: "relative", background: "#0a0a0f", cursor: isDragging ? "grabbing" : "crosshair", overflow: "hidden", touchAction: "none", WebkitUserSelect: "none", userSelect: "none" }}>
+          <div ref={(node) => { viewportRef.current = node; containerRef.current = node; }} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onTouchCancel={handleTouchEnd} onMouseDown={handleMouseDown} onDoubleClick={handleCanvasDoubleClick} style={{ flex: 1, minHeight: 0, position: "relative", background: "#0a0a0f", cursor: isDragging ? "grabbing" : "crosshair", overflow: "hidden", touchAction: "none", WebkitUserSelect: "none", userSelect: "none" }}>
             {!image ? (
               <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"#333" }}>
                 <div style={{ fontSize:32 }}>🧗</div> <div style={{ fontSize:13, marginTop:6 }}>루트 사진을 열면 여기에 표시됩니다</div>
@@ -1000,6 +1321,67 @@ export default function App() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {labelEditor.open && (
+        <div onClick={() => setLabelEditor(prev => ({ ...prev, open: false }))} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:1080, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width:"100%", maxWidth:460, background:"#111", border:"1px solid #333", borderRadius:12, padding:12, display:"flex", flexDirection:"column", gap:8 }}>
+            <div style={{ fontSize:13, color:"#93c5fd", fontWeight:"bold" }}>{labelEditor.id ? "Label 수정" : "Label 입력"}</div>
+            <textarea
+              autoFocus
+              value={labelEditor.text}
+              onChange={(e) => setLabelEditor(prev => ({ ...prev, text: e.target.value }))}
+              placeholder={"예시)\n2026 경기도 유스 볼더리그\n\nU15 Girls\n\nQualification\n\nRoute A"}
+              rows={7}
+              style={{ width:"100%", resize:"vertical", minHeight:120, borderRadius:8, border:"1px solid #444", background:"#18181b", color:"#fff", padding:"10px", fontSize:13, lineHeight:1.4, boxSizing:"border-box" }}
+            />
+            <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+              <button onClick={() => setLabelEditor(prev => ({ ...prev, open: false }))} style={{ background:"#27272a", color:"#d4d4d8", border:"1px solid #3f3f46", borderRadius:8, padding:"8px 12px", fontSize:12, fontWeight:"bold", cursor:"pointer" }}>취소</button>
+              <button onClick={saveLabelEditor} style={{ background:"#2563eb", color:"#fff", border:"1px solid #1d4ed8", borderRadius:8, padding:"8px 12px", fontSize:12, fontWeight:"bold", cursor:"pointer" }}>저장</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMarkerSheet && (
+        <div onClick={() => setShowMarkerSheet(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:1090, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width:"100%", maxWidth:520, background:"#111", borderTopLeftRadius:16, borderTopRightRadius:16, borderTop:"1px solid #333", padding:"14px 12px calc(12px + env(safe-area-inset-bottom)) 12px", display:"flex", flexDirection:"column", gap:10 }}>
+            <div style={{ fontSize:14, fontWeight:"bold", color:"#e5e7eb", textAlign:"center", marginBottom:2 }}>마커 종류 선택</div>
+            {MARKER_PICKER_ORDER.map((markerKey) => {
+              const markerMeta = MARKER_MODE_META[markerKey];
+              const isSelected = currentMarkerKey === markerKey;
+              return (
+                <button
+                  key={markerKey}
+                  onClick={() => {
+                    setMarkerMode(markerKey);
+                    setMode(markerKey);
+                    setShowMarkerSheet(false);
+                  }}
+                  style={{
+                    width:"100%",
+                    minHeight:46,
+                    borderRadius:12,
+                    border:isSelected ? "1px solid #60a5fa" : "1px solid #374151",
+                    background:isSelected ? "rgba(59,130,246,0.22)" : "#1f2937",
+                    color:"#fff",
+                    fontSize:16,
+                    fontWeight:"bold",
+                    cursor:"pointer",
+                    display:"flex",
+                    alignItems:"center",
+                    justifyContent:"space-between",
+                    padding:"0 14px",
+                  }}
+                >
+                  <span>{markerMeta.icon} {markerMeta.label}</span>
+                  <span style={{ color:isSelected ? "#93c5fd" : "#6b7280", fontSize:14 }}>{isSelected ? "선택됨" : ""}</span>
+                </button>
+              );
+            })}
+            <button onClick={() => setShowMarkerSheet(false)} style={{ marginTop:4, minHeight:44, background:"#27272a", color:"#d4d4d8", border:"1px solid #3f3f46", borderRadius:10, padding:"11px 0", fontSize:14, fontWeight:"bold", cursor:"pointer" }}>취소</button>
+          </div>
         </div>
       )}
 
