@@ -34,15 +34,6 @@ const COLORS = {
   duo:   { text: "#000000", stroke: "#ffffff" }, 
 };
 
-const TEXT_STYLE_META = {
-  black: { label: "검정 글씨", fill: "#000000", stroke: "#ffffff" },
-  white: { label: "흰 글씨", fill: "#ffffff", stroke: "#000000" },
-};
-
-function getMarkerTextStyle(marker) {
-  return marker?.textStyle === "white" ? "white" : "black";
-}
-
 function generateUUID() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -215,17 +206,12 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shape
     else {
       const label = String(m.label ?? m.number ?? "");
       ctx.font = `bold ${fs}px sans-serif`;
-
-      const textStyle = getMarkerTextStyle(m);
-      if (m.type === "hold" || m.type === "duo") {
-        ctx.strokeStyle = TEXT_STYLE_META[textStyle].stroke;
-      } else {
-        ctx.strokeStyle = m.type === "hold" ? "#ffffff" : m.type === "duo" ? "#ffffff" : "#000000";
-      }
+    
+      ctx.strokeStyle = m.type === "hold" ? "#ffffff" : m.type === "duo" ? "#ffffff" : "#000000";
       ctx.lineWidth = markerStrokeWidth(m.type === "duo");
-
+    
       ctx.strokeText(label, x, y);
-      ctx.fillStyle = (m.type === "hold" || m.type === "duo") ? TEXT_STYLE_META[textStyle].fill : c.text;
+      ctx.fillStyle = c.text;
       ctx.fillText(label, x, y);
     }
   });
@@ -289,9 +275,6 @@ export default function App() {
   const [showExportSheet, setShowExportSheet] = useState(false);
   const [showMarkerSheet, setShowMarkerSheet] = useState(false);
   const [labelEditor, setLabelEditor] = useState({ open: false, id: null, x: 0, y: 0, text: "" });
-  const [currentTextStyle, setCurrentTextStyle] = useState("black");
-  const [selectedMarkerId, setSelectedMarkerId] = useState(null);
-  const [markerPopup, setMarkerPopup] = useState({ open: false, markerId: null, x: 0, y: 0 });
 
   const containerRef = useRef(null); const viewportRef = useRef(null); const canvasRef = useRef(null); const imgRef = useRef(null);
   const transformRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -300,9 +283,7 @@ export default function App() {
   const ellipseCenterRef = useRef(null); const arrowCenterRef = useRef(null);
   const pinchRef = useRef(null); const tapRef = useRef(null); const mouseDragRef = useRef(null);
   const labelLongPressRef = useRef(null);
-  const markerLongPressRef = useRef(null);
   const labelFontSliderDragRef = useRef(false);
-  const markerPopupRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
 
   // 배치 화면(캔버스)이 언마운트되는 탭으로 전환될 때, 완료되지 않은 드래그/탭 제스처가
@@ -311,7 +292,6 @@ export default function App() {
     if (tab !== "place") {
       mouseDragRef.current = null;
       tapRef.current = null;
-      setMarkerPopup({ open: false, markerId: null, x: 0, y: 0 });
     }
   }, [tab]);
 
@@ -321,12 +301,6 @@ export default function App() {
 
   useEffect(() => { transformRef.current = { zoom, pan }; }, [zoom, pan]);
   useEffect(() => { markersRef.current = markers; }, [markers]);
-  useEffect(() => {
-    if (!selectedMarkerId) return;
-    if (!markers.some(marker => marker.id === selectedMarkerId)) {
-      setSelectedMarkerId(null);
-    }
-  }, [markers, selectedMarkerId]);
   useEffect(() => { shapesRef.current = shapes; }, [shapes]);
   useEffect(() => { arrowsRef.current = arrows; }, [arrows]);
   useEffect(() => { labelsRef.current = labels; }, [labels]);
@@ -350,9 +324,7 @@ export default function App() {
     if (mode !== "arrow") { setArrowCenter(null); setPreviewArrow(null); }
     if (MARKER_MODES.includes(mode)) setMarkerMode(mode);
     setSelectedShapeOrArrow(null);
-    setSelectedMarkerId(null);
     setShowMarkerSheet(false);
-    setMarkerPopup({ open: false, markerId: null, x: 0, y: 0 });
   }, [mode]);
 
   useEffect(() => {
@@ -371,19 +343,6 @@ export default function App() {
     const onMouseMove = (e) => updatePreview(e.clientX, e.clientY, e.shiftKey);
     window.addEventListener("mousemove", onMouseMove); return () => window.removeEventListener("mousemove", onMouseMove);
   }, [mode, ellipseCenter, imgSize]);
-
-  useEffect(() => {
-    if (!markerPopup.open || !markerPopupRef.current) return;
-    const popupRect = markerPopupRef.current.getBoundingClientRect();
-    const margin = 8;
-    const maxX = window.innerWidth - popupRect.width - margin;
-    const maxY = window.innerHeight - popupRect.height - margin;
-    const nextX = Math.min(Math.max(markerPopup.x, margin), Math.max(margin, maxX));
-    const nextY = Math.min(Math.max(markerPopup.y, margin), Math.max(margin, maxY));
-    if (nextX !== markerPopup.x || nextY !== markerPopup.y) {
-      setMarkerPopup(prev => ({ ...prev, x: nextX, y: nextY }));
-    }
-  }, [markerPopup.open, markerPopup.x, markerPopup.y]);
 
   useEffect(() => {
     if (mode !== "arrow" || !arrowCenter) return;
@@ -452,7 +411,7 @@ export default function App() {
     const file = e.target.files[0]; if (!file) return;
     const url = URL.createObjectURL(file); const img = new Image();
     img.onload = () => {
-      setImgSize({ w: img.naturalWidth, h: img.naturalHeight }); setImage(url); setMarkers([]); setShapes([]); setArrows([]); setLabels([]); setPreviewShape(null); setPreviewArrow(null); setEllipseCenter(null); setArrowCenter(null); setSelectedLabelId(null); setSelectedMarkerId(null); setHistory([]); setNextHoldNumber(1); resetTransform();
+      setImgSize({ w: img.naturalWidth, h: img.naturalHeight }); setImage(url); setMarkers([]); setShapes([]); setArrows([]); setLabels([]); setPreviewShape(null); setPreviewArrow(null); setEllipseCenter(null); setArrowCenter(null); setSelectedLabelId(null); setHistory([]); setNextHoldNumber(1); resetTransform();
     };
     img.src = url;
   };
@@ -501,9 +460,7 @@ export default function App() {
           else {
             const number = parseInt(cells[0]) || 0; const x = parseFloat(cells[1]); const y = parseFloat(cells[2]); const label = cells[4] || "";
             if (!isNaN(x) && !isNaN(y)) {
-              const marker = { id: generateUUID(), x, y, type: dataType, label, number };
-              if (dataType === "hold" || dataType === "duo") marker.textStyle = "black";
-              importedMarkers.push(marker);
+              importedMarkers.push({ id: generateUUID(), x, y, type: dataType, label, number });
             }
           }
         }
@@ -687,7 +644,6 @@ export default function App() {
 
   const handleEllipseTap = useCallback((clientX, clientY, lockCircle = false) => {
     const coords = clientToImageCoords(clientX, clientY); if (!coords) return;
-    setSelectedMarkerId(null);
     const center = ellipseCenterRef.current;
     if (center) {
       const shape = ellipseFromDrag(center.x, center.y, coords.x, coords.y, lockCircle);
@@ -702,7 +658,6 @@ export default function App() {
 
   const handleArrowTap = useCallback((clientX, clientY) => {
     const coords = clientToImageCoords(clientX, clientY); if (!coords) return;
-    setSelectedMarkerId(null);
     const center = arrowCenterRef.current;
     if (center) {
       if (Math.hypot(coords.x - center.x, coords.y - center.y) > 5) {
@@ -715,7 +670,6 @@ export default function App() {
   }, [clientToImageCoords, makeSnapshot, findArrowAt]);
 
   const handleLabelTap = useCallback((clientX, clientY) => {
-    setSelectedMarkerId(null);
     const clickedLabel = findLabelAt(clientX, clientY);
     if (clickedLabel) {
       setSelectedLabelId(clickedLabel.id);
@@ -734,16 +688,15 @@ export default function App() {
     const coords = clientToImageCoords(clientX, clientY); if (!coords) return;
     setSelectedLabelId(null);
     setSelectedShapeOrArrow(null);
-    setSelectedMarkerId(null);
     const { x, y } = coords; const snapshot = makeSnapshot();
     const nHold = nextHoldNumberRef.current;
 
     let marker;
-    if (mode === "duo") marker = { id: generateUUID(), x, y, type: "duo", label: `${nHold}/${nHold+1}`, number: nHold, textStyle: currentTextStyle };
+    if (mode === "duo") marker = { id: generateUUID(), x, y, type: "duo", label: `${nHold}/${nHold+1}`, number: nHold };
     else if (mode === "clip") marker = { id: generateUUID(), x, y, type: "clip", label: "C", number: 0 };
     else if (mode === "top") marker = { id: generateUUID(), x, y, type: "top", label: "TOP", number: 0 };
     else if (mode === "start") marker = { id: generateUUID(), x, y, type: "start", label: "START", number: 0 };
-    else marker = { id: generateUUID(), x, y, type: "hold", label: String(nHold), number: nHold, textStyle: currentTextStyle };
+    else marker = { id: generateUUID(), x, y, type: "hold", label: String(nHold), number: nHold };
 
     setHistory(prev => [...prev, snapshot]);
     setMarkers(prev => {
@@ -757,7 +710,7 @@ export default function App() {
       setNextHoldNumber(nextHold);
       return updatedList;
     });
-  }, [image, clientToImageCoords, mode, lockNumber, makeSnapshot, reindexMarkers, currentTextStyle]);
+  }, [image, clientToImageCoords, mode, lockNumber, makeSnapshot, reindexMarkers]);
 
   const insertMarkerAt = useCallback((targetIndex) => {
     if (!image) return; 
@@ -785,7 +738,7 @@ export default function App() {
 
     // 3. 계산된 중간 좌표(newX, newY)로 새 홀드를 생성합니다.
     const nHold = nextHoldNumberRef.current;
-    const newMarker = { id: generateUUID(), x: newX, y: newY, type: "hold", label: String(nHold), number: nHold, textStyle: currentTextStyle };
+    const newMarker = { id: generateUUID(), x: newX, y: newY, type: "hold", label: String(nHold), number: nHold };
     
     setHistory(prev => [...prev, snapshot]);
     setMarkers(prev => {
@@ -800,13 +753,11 @@ export default function App() {
       return updatedList;
     });
     setTab("place");
-  }, [image, imgSize, makeSnapshot, reindexMarkers, lockNumber, currentTextStyle]);
+  }, [image, imgSize, makeSnapshot, reindexMarkers, lockNumber]);
 
   const handleDeleteMarker = (id) => {
     const snapshot = makeSnapshot(); const nextMarkers = markersRef.current.filter(m => m.id !== id);
     setHistory(prev => [...prev, snapshot]);
-    if (selectedMarkerId === id) setSelectedMarkerId(null);
-    if (markerPopup.markerId === id) closeMarkerPopup();
     if (lockNumber) {
       setMarkers(nextMarkers);
     } else {
@@ -817,13 +768,7 @@ export default function App() {
 
   const handleMarkerTypeChange = (id, newType) => {
     const snap = makeSnapshot();
-    const next = markers.map(x => {
-      if (x.id !== id) return x;
-      if ((newType === "hold" || newType === "duo") && x.type !== "hold" && x.type !== "duo") {
-        return { ...x, type: newType, textStyle: "black" };
-      }
-      return { ...x, type: newType };
-    });
+    const next = markers.map(x => x.id === id ? { ...x, type: newType } : x);
     setHistory(prev => [...prev, snap]);
     if (lockNumber) {
       setMarkers(next);
@@ -833,45 +778,6 @@ export default function App() {
       setNextHoldNumber(nextHold);
     }
   };
-
-  const closeMarkerPopup = useCallback(() => {
-    if (markerLongPressRef.current) {
-      clearTimeout(markerLongPressRef.current);
-      markerLongPressRef.current = null;
-    }
-    setMarkerPopup({ open: false, markerId: null, x: 0, y: 0 });
-  }, []);
-
-  const openMarkerPopupAt = useCallback((markerId, clientX, clientY) => {
-    const margin = 8;
-    const estimatedWidth = 220;
-    const estimatedHeight = 260;
-    const x = Math.min(Math.max(clientX - estimatedWidth / 2, margin), Math.max(margin, window.innerWidth - estimatedWidth - margin));
-    const y = Math.min(Math.max(clientY - estimatedHeight - 14, margin), Math.max(margin, window.innerHeight - estimatedHeight - margin));
-    setMarkerPopup({ open: true, markerId, x, y });
-  }, []);
-
-  const handleMarkerTextStyleChange = useCallback((markerId, nextStyle) => {
-    if (!markerId) return;
-    const target = markersRef.current.find(marker => marker.id === markerId);
-    if (!target || (target.type !== "hold" && target.type !== "duo")) return;
-    if (getMarkerTextStyle(target) === nextStyle) return;
-    const snapshot = makeSnapshot();
-    setHistory(prev => [...prev, snapshot]);
-    setMarkers(prev => prev.map(marker => marker.id === markerId ? { ...marker, textStyle: nextStyle } : marker));
-  }, [makeSnapshot]);
-
-  const insertMarkerAfterId = useCallback((markerId) => {
-    const idx = markersRef.current.findIndex(marker => marker.id === markerId);
-    if (idx < 0) return;
-    insertMarkerAt(idx + 1);
-  }, [insertMarkerAt]);
-
-  const insertMarkerBeforeId = useCallback((markerId) => {
-    const idx = markersRef.current.findIndex(marker => marker.id === markerId);
-    if (idx < 0) return;
-    insertMarkerAt(idx);
-  }, [insertMarkerAt]);
 
   const handleDeleteSelectedShapeOrArrow = () => {
     if (!selectedShapeOrArrow && !selectedLabelId) return;
@@ -936,8 +842,7 @@ export default function App() {
   }, [findLabelAt, findMarkerAt, findShapeAt, findHandleAt, findArrowAt, makeSnapshot, clientToImageCoords]);
 
   const handleMouseDown = (e) => {
-    if (!image || e.button !== 0 || markerPopup.open) return;
-    clearMarkerLongPress();
+    if (!image || e.button !== 0) return;
     setShowMarkerSheet(false);
     e.preventDefault(); mouseDragRef.current = beginPointerDrag(e.clientX, e.clientY);
   };
@@ -948,21 +853,6 @@ export default function App() {
     if (!hitLabel) return;
     e.preventDefault();
     openLabelEditorForExisting(hitLabel);
-  };
-
-  const handleCanvasContextMenu = (e) => {
-    if (!image) return;
-    e.preventDefault();
-    const hitMarker = findMarkerAt(e.clientX, e.clientY);
-    if (!hitMarker || (hitMarker.type !== "hold" && hitMarker.type !== "duo")) {
-      closeMarkerPopup();
-      return;
-    }
-    clearMarkerLongPress();
-    setSelectedMarkerId(hitMarker.id);
-    setSelectedShapeOrArrow(null);
-    setSelectedLabelId(null);
-    openMarkerPopupAt(hitMarker.id, e.clientX, e.clientY);
   };
 
   const zoomAtPoint = useCallback((clientX, clientY, nextZoom) => {
@@ -993,30 +883,15 @@ export default function App() {
         else {
           setSelectedLabelId(drag.labelId);
           setSelectedShapeOrArrow(null);
-          setSelectedMarkerId(null);
         }
         return;
       }
-      if (drag.type === "marker") {
-        if (drag.moved) {
-          setHistory(prev => [...prev, drag.snapshot]);
-        } else {
-          const selectedMarker = markersRef.current.find(marker => marker.id === drag.markerId);
-          if (selectedMarker && (selectedMarker.type === "hold" || selectedMarker.type === "duo")) {
-            setSelectedMarkerId(drag.markerId);
-            setSelectedShapeOrArrow(null);
-            setSelectedLabelId(null);
-          }
-        }
-        return;
-      }
-      if (drag.type === "resize-shape") { if (drag.moved) setHistory(prev => [...prev, drag.snapshot]); return; }
+      if (drag.type === "marker" || drag.type === "resize-shape") { if (drag.moved) setHistory(prev => [...prev, drag.snapshot]); return; }
       if (drag.type === "shape") {
         if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
         else {
           setSelectedShapeOrArrow({ type: "shape", id: drag.shapeId });
           setSelectedLabelId(null);
-          setSelectedMarkerId(null);
         }
         return;
       }
@@ -1025,7 +900,6 @@ export default function App() {
         else {
           setSelectedShapeOrArrow({ type: "arrow", id: drag.arrowId });
           setSelectedLabelId(null);
-          setSelectedMarkerId(null);
         }
         return;
       }
@@ -1057,21 +931,10 @@ export default function App() {
     labelLongPressRef.current = null;
   }, []);
 
-  const clearMarkerLongPress = useCallback(() => {
-    if (!markerLongPressRef.current) return;
-    clearTimeout(markerLongPressRef.current);
-    markerLongPressRef.current = null;
-  }, []);
-
-  useEffect(() => () => {
-    clearLabelLongPress();
-    clearMarkerLongPress();
-  }, [clearLabelLongPress, clearMarkerLongPress]);
+  useEffect(() => () => clearLabelLongPress(), [clearLabelLongPress]);
 
   const handleTouchStart = (e) => {
-    if (!image || markerPopup.open) return;
-    e.preventDefault();
-    clearMarkerLongPress();
+    if (!image) return;
     setShowMarkerSheet(false);
     if (e.touches.length === 2) { clearLabelLongPress(); e.preventDefault(); beginPinch(e.touches[0], e.touches[1]); return; }
     if (e.touches.length === 1 && !pinchRef.current) {
@@ -1089,33 +952,16 @@ export default function App() {
           }
         }, 550);
       }
-      if (drag?.type === "marker") {
-        const marker = markersRef.current.find(item => item.id === drag.markerId);
-        if (marker && (marker.type === "hold" || marker.type === "duo")) {
-          const pressX = touch.clientX;
-          const pressY = touch.clientY;
-          markerLongPressRef.current = setTimeout(() => {
-            const activeDrag = tapRef.current;
-            if (!activeDrag || activeDrag.type !== "marker" || activeDrag.markerId !== drag.markerId || activeDrag.moved) return;
-            tapRef.current = null;
-            setIsDragging(false);
-            setSelectedMarkerId(drag.markerId);
-            setSelectedShapeOrArrow(null);
-            setSelectedLabelId(null);
-            openMarkerPopupAt(drag.markerId, pressX, pressY);
-          }, 500);
-        }
-      }
     }
   };
 
   const handleTouchMove = (e) => {
-    if (!image) return; if (e.touches.length === 2) { clearLabelLongPress(); clearMarkerLongPress(); e.preventDefault(); applyPinch(e.touches[0], e.touches[1]); return; }
+    if (!image) return; if (e.touches.length === 2) { clearLabelLongPress(); e.preventDefault(); applyPinch(e.touches[0], e.touches[1]); return; }
     const drag = tapRef.current;
     if (e.touches.length === 1 && drag && !pinchRef.current) {
       e.preventDefault(); const t = e.touches[0]; const dx = t.clientX - drag.startX; const dy = t.clientY - drag.startY;
       const moveThreshold = (drag.arrowTap || drag.ellipseTap) ? 24 : TAP_MOVE_THRESHOLD;
-      if (!drag.moved && Math.hypot(dx, dy) > moveThreshold) { drag.moved = true; clearLabelLongPress(); clearMarkerLongPress(); setIsDragging(true); }
+      if (!drag.moved && Math.hypot(dx, dy) > moveThreshold) { drag.moved = true; clearLabelLongPress(); setIsDragging(true); }
       if (!drag.moved) return;
       
       if (drag.type === "label") {
@@ -1133,7 +979,6 @@ export default function App() {
 
   const handleTouchEnd = (e) => {
     clearLabelLongPress();
-    clearMarkerLongPress();
     if (!image) return; 
     if (pinchRef.current) { 
       e.preventDefault(); 
@@ -1149,30 +994,15 @@ export default function App() {
         else {
           setSelectedLabelId(drag.labelId);
           setSelectedShapeOrArrow(null);
-          setSelectedMarkerId(null);
         }
         return;
       }
-      if (drag.type === "marker") {
-        if (drag.moved) {
-          setHistory(prev => [...prev, drag.snapshot]);
-        } else {
-          const selectedMarker = markersRef.current.find(marker => marker.id === drag.markerId);
-          if (selectedMarker && (selectedMarker.type === "hold" || selectedMarker.type === "duo")) {
-            setSelectedMarkerId(drag.markerId);
-            setSelectedShapeOrArrow(null);
-            setSelectedLabelId(null);
-          }
-        }
-        return;
-      }
-      if (drag.type === "resize-shape") { if (drag.moved) setHistory(prev => [...prev, drag.snapshot]); return; }
+      if (drag.type === "marker" || drag.type === "resize-shape") { if (drag.moved) setHistory(prev => [...prev, drag.snapshot]); return; }
       if (drag.type === "shape") {
         if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
         else {
           setSelectedShapeOrArrow({ type: "shape", id: drag.shapeId });
           setSelectedLabelId(null);
-          setSelectedMarkerId(null);
         }
         return;
       }
@@ -1181,7 +1011,6 @@ export default function App() {
         else {
           setSelectedShapeOrArrow({ type: "arrow", id: drag.arrowId });
           setSelectedLabelId(null);
-          setSelectedMarkerId(null);
         }
         return;
       }
@@ -1198,7 +1027,6 @@ export default function App() {
   const beginPinch = (t1, t2) => {
     pinchRef.current = { startDistance: getTouchDistance(t1, t2), startZoom: transformRef.current.zoom, startPan: { ...transformRef.current.pan }, startMid: getTouchMidpoint(t1, t2) };
     clearLabelLongPress();
-    clearMarkerLongPress();
     tapRef.current = null; mouseDragRef.current = null; setPreviewShape(null); setPreviewArrow(null); setIsDragging(false);
   };
 
@@ -1225,7 +1053,7 @@ export default function App() {
   const handleUndo = () => {
     if (history.length === 0) return; const snapshot = history[history.length - 1];
     setMarkers(snapshot.markers); setShapes(snapshot.shapes ?? []); setArrows(snapshot.arrows ?? []); setLabels(snapshot.labels ?? []); setNextHoldNumber(snapshot.nextHoldNumber);
-    setPreviewShape(null); setPreviewArrow(null); setHistory(h => h.slice(0, -1)); setSelectedShapeOrArrow(null); setSelectedLabelId(null); setSelectedMarkerId(null); closeMarkerPopup();
+    setPreviewShape(null); setPreviewArrow(null); setHistory(h => h.slice(0, -1)); setSelectedShapeOrArrow(null); setSelectedLabelId(null);
   };
 
   const handleExportCSV = () => {
@@ -1294,26 +1122,9 @@ export default function App() {
   const currentMarkerMeta = MARKER_MODE_META[currentMarkerKey];
   const selectedLabel = selectedLabelId ? labels.find(label => label.id === selectedLabelId) : null;
   const selectedLabelSize = selectedLabel ? Math.max(LABEL_MIN_FONT_SIZE, Number(selectedLabel.fontSize) || DEFAULT_LABEL_FONT_SIZE) : null;
-  const selectedMarker = selectedMarkerId ? markers.find(marker => marker.id === selectedMarkerId) : null;
-  const popupMarker = markerPopup.markerId ? markers.find(marker => marker.id === markerPopup.markerId) : null;
 
   return (
-    <div
-      onContextMenu={(e) => e.preventDefault()}
-      style={{
-        display:"flex",
-        flexDirection:"column",
-        height:"100dvh",
-        background:"#0a0a0f",
-        color:"white",
-        fontFamily:"sans-serif",
-        overflow:"hidden",
-        userSelect:"none",
-        WebkitUserSelect:"none",
-        msUserSelect:"none",
-        WebkitTouchCallout:"none",
-      }}
-    >
+    <div style={{ display:"flex", flexDirection:"column", height:"100dvh", background:"#0a0a0f", color:"white", fontFamily:"sans-serif", overflow:"hidden" }}>
       {/* 헤더 */}
       <div style={{ padding:"10px 14px", background:"#111", borderBottom:"1px solid #222", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0, zIndex:200 }}>
         <div>
@@ -1424,7 +1235,7 @@ export default function App() {
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 12px", background:"#0a0a0f", borderBottom:"1px solid #1a1a1a", flexShrink:0, zIndex:200 }}>
             <span style={{ fontSize:11, color:"#93c5fd", fontWeight: "bold" }}>
               {/* ⚡ [피드백 반영] 유저 가이드 텍스트 최적화 완료 */}
-              {!image ? "사진을 먼저 열어주세요" : selectedLabelId ? `🚨 선택됨: [Label]   ${selectedLabelSize ?? labelFontSize}px` : selectedMarker ? `🚨 선택됨: [${selectedMarker.type === "duo" ? `Duo #${selectedMarker.label}` : `Hold #${selectedMarker.number}`}]` : selectedShapeOrArrow ? `🚨 선택됨: [${selectedShapeOrArrow.type === "shape" ? "원형" : "화살표"}]` : mode==="ellipse" ? "클릭: 중심 / 원 선택 후 삭제 가능" : mode==="arrow" ? "클릭: 시작점 ➡️ 끝점 / 선택 시 삭제" : mode==="label" ? "터치: Label 생성 / 더블클릭·길게누르기: 편집" : `다음 홀드: #${nextHoldNumber}`}
+              {!image ? "사진을 먼저 열어주세요" : selectedLabelId ? `🚨 선택됨: [Label]   ${selectedLabelSize ?? labelFontSize}px` : selectedShapeOrArrow ? `🚨 선택됨: [${selectedShapeOrArrow.type === "shape" ? "원형" : "화살표"}]` : mode==="ellipse" ? "클릭: 중심 / 원 선택 후 삭제 가능" : mode==="arrow" ? "클릭: 시작점 ➡️ 끝점 / 선택 시 삭제" : mode==="label" ? "터치: Label 생성 / 더블클릭·길게누르기: 편집" : `다음 홀드: #${nextHoldNumber}`}
             </span>
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
               {(selectedShapeOrArrow || selectedLabelId) && (
@@ -1438,15 +1249,15 @@ export default function App() {
           </div>
 
           {/* 사진 영역 */}
-          <div ref={(node) => { viewportRef.current = node; containerRef.current = node; }} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onTouchCancel={handleTouchEnd} onMouseDown={handleMouseDown} onDoubleClick={handleCanvasDoubleClick} onContextMenu={handleCanvasContextMenu} style={{ flex: 1, minHeight: 0, position: "relative", background: "#0a0a0f", cursor: isDragging ? "grabbing" : "crosshair", overflow: "hidden", touchAction: "none", WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none" }}>
+          <div ref={(node) => { viewportRef.current = node; containerRef.current = node; }} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onTouchCancel={handleTouchEnd} onMouseDown={handleMouseDown} onDoubleClick={handleCanvasDoubleClick} style={{ flex: 1, minHeight: 0, position: "relative", background: "#0a0a0f", cursor: isDragging ? "grabbing" : "crosshair", overflow: "hidden", touchAction: "none", WebkitUserSelect: "none", userSelect: "none" }}>
             {!image ? (
               <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", color:"#333" }}>
                 <div style={{ fontSize:32 }}>🧗</div> <div style={{ fontSize:13, marginTop:6 }}>루트 사진을 열면 여기에 표시됩니다</div>
               </div>
             ) : (
               <div style={{ position: "absolute", top: 0, left: 0, width: displayW, height: displayH, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0", willChange: "transform" }}>
-                <img ref={imgRef} src={image} alt="route" draggable={false} style={{ width: displayW, height: displayH, display:"block", pointerEvents:"none", userSelect:"none", WebkitUserSelect:"none", WebkitTouchCallout:"none" }} />
-                <canvas ref={canvasRef} style={{ position: "absolute", top: 0, left: 0, width: displayW, height: displayH, touchAction: "none", userSelect:"none", WebkitUserSelect:"none", WebkitTouchCallout:"none" }} />
+                <img ref={imgRef} src={image} alt="route" draggable={false} style={{ width: displayW, height: displayH, display:"block", pointerEvents:"none" }} />
+                <canvas ref={canvasRef} style={{ position: "absolute", top: 0, left: 0, width: displayW, height: displayH, touchAction: "none" }} />
               </div>
             )}
           </div>
@@ -1484,23 +1295,7 @@ export default function App() {
                     >
                       {["hold","start","top","clip","duo"].map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
-                    {(m.type === "hold" || m.type === "duo") ? (
-                      <select
-                        value={getMarkerTextStyle(m)}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          handleMarkerTextStyleChange(m.id, e.target.value);
-                        }}
-                        style={{ background:"#333", color:"white", border:"1px solid #444", borderRadius:6, fontSize:11, padding:"2px 4px" }}
-                      >
-                        <option value="black">검정</option>
-                        <option value="white">흰색</option>
-                      </select>
-                    ) : (
-                      <span style={{ fontSize:11, color:"#555", minWidth:36, textAlign:"center" }}>-</span>
-                    )}
-                    <span style={{ fontSize:11, color:"#666", flex:1, textAlign:"right" }}>({Math.round(m.x)}, {Math.round(m.y)})</span>
+                    <span style={{ fontSize:11, color:"#666", flex:1 }}>({Math.round(m.x)}, {Math.round(m.y)})</span>
                     <button
                       onClick={(e) => {
                         e.preventDefault();
@@ -1586,102 +1381,6 @@ export default function App() {
               );
             })}
             <button onClick={() => setShowMarkerSheet(false)} style={{ marginTop:4, minHeight:44, background:"#27272a", color:"#d4d4d8", border:"1px solid #3f3f46", borderRadius:10, padding:"11px 0", fontSize:14, fontWeight:"bold", cursor:"pointer" }}>취소</button>
-          </div>
-        </div>
-      )}
-
-      {markerPopup.open && popupMarker && (popupMarker.type === "hold" || popupMarker.type === "duo") && (
-        <div
-          onClick={closeMarkerPopup}
-          onTouchStart={closeMarkerPopup}
-          onContextMenu={(e) => e.preventDefault()}
-          style={{ position:"fixed", inset:0, background:"transparent", zIndex:1110 }}
-        >
-          <div
-            ref={markerPopupRef}
-            onClick={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
-            style={{
-              position:"fixed",
-              left: markerPopup.x,
-              top: markerPopup.y,
-              minWidth:220,
-              maxWidth:240,
-              background:"#111827",
-              border:"1px solid #334155",
-              borderRadius:12,
-              boxShadow:"0 10px 26px rgba(0,0,0,0.42)",
-              padding:10,
-              display:"flex",
-              flexDirection:"column",
-              gap:8,
-            }}
-          >
-            <div style={{ fontSize:12, color:"#bfdbfe", fontWeight:"bold" }}>
-              {popupMarker.type === "duo" ? `Duo #${popupMarker.label}` : `Hold #${popupMarker.number}`}
-            </div>
-            <div style={{ display:"flex", gap:6 }}>
-              {(["black", "white"]).map(styleKey => {
-                const styleMeta = TEXT_STYLE_META[styleKey];
-                const isActive = getMarkerTextStyle(popupMarker) === styleKey;
-                return (
-                  <button
-                    key={`popup-${styleKey}`}
-                    onClick={() => {
-                      handleMarkerTextStyleChange(popupMarker.id, styleKey);
-                      setCurrentTextStyle(styleKey);
-                      closeMarkerPopup();
-                    }}
-                    style={{
-                      flex:1,
-                      fontSize:11,
-                      padding:"6px 0",
-                      borderRadius:8,
-                      cursor:"pointer",
-                      border: isActive ? "2px solid #60a5fa" : "1px solid #475569",
-                      background: styleKey === "black" ? "#f8fafc" : "#0f172a",
-                      color: styleMeta.fill,
-                      fontWeight:"bold",
-                    }}
-                  >
-                    {styleKey === "black" ? "검정 글씨" : "흰 글씨"}
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={() => {
-                insertMarkerBeforeId(popupMarker.id);
-                closeMarkerPopup();
-              }}
-              style={{ background:"#1e293b", color:"#93c5fd", border:"1px dashed #3b82f6", borderRadius:8, padding:"7px 0", fontSize:11, fontWeight:"bold", cursor:"pointer" }}
-            >
-              ➕ 앞에 삽입
-            </button>
-            <button
-              onClick={() => {
-                insertMarkerAfterId(popupMarker.id);
-                closeMarkerPopup();
-              }}
-              style={{ background:"#1e293b", color:"#93c5fd", border:"1px dashed #3b82f6", borderRadius:8, padding:"7px 0", fontSize:11, fontWeight:"bold", cursor:"pointer" }}
-            >
-              ➕ 뒤에 삽입
-            </button>
-            <button
-              onClick={() => {
-                handleDeleteMarker(popupMarker.id);
-                closeMarkerPopup();
-              }}
-              style={{ background:"#7f1d1d", color:"#fecaca", border:"1px solid #dc2626", borderRadius:8, padding:"7px 0", fontSize:11, fontWeight:"bold", cursor:"pointer" }}
-            >
-              🗑️ 삭제
-            </button>
-            <button
-              onClick={closeMarkerPopup}
-              style={{ background:"#27272a", color:"#d4d4d8", border:"1px solid #3f3f46", borderRadius:8, padding:"7px 0", fontSize:11, fontWeight:"bold", cursor:"pointer" }}
-            >
-              닫기
-            </button>
           </div>
         </div>
       )}
