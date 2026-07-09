@@ -9,28 +9,21 @@ const TAP_MOVE_THRESHOLD = 10;
 const MOUSE_DRAG_THRESHOLD = 5;
 const MIN_SHAPE_RADIUS = 4;
 const HANDLE_SCREEN_RADIUS = 5;
-const LABEL_MIN_FONT_SIZE = 16;
-const LABEL_MAX_FONT_SIZE = 56;
-const DEFAULT_LABEL_FONT_SIZE = 28;
+const LABEL_MIN_FONT_SIZE = 12;
+const LABEL_MAX_FONT_SIZE = 40;
+const DEFAULT_LABEL_FONT_SIZE = 20;
 const LABEL_PADDING_X = 15;
 const LABEL_PADDING_Y = 9;
 const LABEL_LINE_HEIGHT = 1.25;
 const LABEL_BORDER_RADIUS = 14;
 const MARKER_MODES = ["hold", "start", "top", "clip", "duo"];
 const MARKER_PICKER_ORDER = ["hold", "duo", "top", "start", "clip"];
-const SHAPE_MODES = ["safex", "arrow", "ellipse"];
-const SHAPE_PICKER_ORDER = ["safex", "arrow", "ellipse"];
 const MARKER_MODE_META = {
   hold: { label: "홀드", icon: "⚪", color: "#ffffff", text: "#111111" },
   start: { label: "START", icon: "🟢", color: "#22c55e", text: "#ffffff" },
   top: { label: "TOP", icon: "🔵", color: "#3b82f6", text: "#ffffff" },
   clip: { label: "클립", icon: "🟡", color: "#facc15", text: "#111111" },
   duo: { label: "듀오", icon: "🩷", color: "#ec4899", text: "#ffffff" },
-};
-const SHAPE_MODE_META = {
-  safex: { label: "안전홀드", icon: "✖", color: "#2563eb", text: "#ffffff" },
-  arrow: { label: "선", icon: "➖", color: "#ff4500", text: "#ffffff" },
-  ellipse: { label: "원형", icon: "⭕", color: "#a3a3a3", text: "#111111" },
 };
 
 const COLORS = {
@@ -63,16 +56,6 @@ function ellipseFromDrag(cx, cy, x1, y1, lockCircle = false) {
   let rx = Math.abs(x1 - cx); let ry = Math.abs(y1 - cy);
   if (lockCircle) { const r = Math.max(rx, ry); rx = r; ry = r; }
   return { cx, cy, rx, ry };
-}
-
-function safeXFromDrag(cx, cy, x1, y1) {
-  return { cx, cy, size: Math.max(Math.abs(x1 - cx), Math.abs(y1 - cy)) };
-}
-
-function safeXToEllipseLike(shape) {
-  const fallbackSize = Math.max(Number(shape?.rx) || 0, Number(shape?.ry) || 0);
-  const size = Math.max(MIN_SHAPE_RADIUS, Number(shape?.size) || fallbackSize || MIN_SHAPE_RADIUS);
-  return { cx: shape.cx, cy: shape.cy, rx: size, ry: size };
 }
 
 function pointInEllipse(px, py, shape, pad = 0) {
@@ -112,40 +95,6 @@ function drawArrowShape(ctx, arrow, s, strokeWidth = 2) {
   ctx.lineTo(sx2, sy2);
   ctx.strokeStyle = "#000000";
   ctx.lineWidth = innerWidth;
-  ctx.stroke();
-}
-
-function drawSafeXShape(ctx, shape, s) {
-  if (!shape) return;
-  const fallbackSize = Math.max(Number(shape.rx) || 0, Number(shape.ry) || 0);
-  const half = Math.max(MIN_SHAPE_RADIUS, Number(shape.size) || fallbackSize || 0);
-  if (half <= 0) return;
-  const dynamicStroke = Math.max(3, half * s * 0.14);
-  const left = (shape.cx - half) * s;
-  const right = (shape.cx + half) * s;
-  const top = (shape.cy - half) * s;
-  const bottom = (shape.cy + half) * s;
-
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-
-  const outer = Math.max(1.5, dynamicStroke + 2);
-  ctx.beginPath();
-  ctx.moveTo(left, top);
-  ctx.lineTo(right, bottom);
-  ctx.moveTo(right, top);
-  ctx.lineTo(left, bottom);
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = outer * s;
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(left, top);
-  ctx.lineTo(right, bottom);
-  ctx.moveTo(right, top);
-  ctx.lineTo(left, bottom);
-  ctx.strokeStyle = "#2563eb";
-  ctx.lineWidth = dynamicStroke;
   ctx.stroke();
 }
 
@@ -219,7 +168,7 @@ function drawLabelCard(ctx, label, scaleFactor, selected, customCtx = null) {
   ctx.restore();
 }
 
-function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shapes = [], previewShape = null, selectedShapeId = null, ellipseCenter = null, ellipseStrokeWidth = 1.5, arrows = [], previewArrow = null, arrowCenter = null, arrowStrokeWidth = 1.5, safeXShapes = [], previewSafeXShape = null, selectedSafeXShapeId = null, safeXCenter = null, applyMinFontSize = false, labels = [], selectedLabelId = null, labelMeasureCtx = null) {
+function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shapes = [], previewShape = null, selectedShapeId = null, ellipseCenter = null, ellipseStrokeWidth = 1.5, arrows = [], previewArrow = null, arrowCenter = null, arrowStrokeWidth = 1.5, applyMinFontSize = false, labels = [], selectedLabelId = null, labelMeasureCtx = null) {
   const s = scale * dpr; const sizeRatio = markerSize / MARKER_RADIUS;
   const rawFs = FONT_SIZE * sizeRatio * s;
   const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0;
@@ -300,18 +249,6 @@ function drawAll(ctx, markers, scale, markerSize = MARKER_RADIUS, dpr = 1, shape
     ctx.fillStyle = "#ff4500"; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = startBorderWidth; ctx.stroke();
   }
 
-  safeXShapes.forEach(shape => {
-    drawSafeXShape(ctx, shape, s);
-  });
-  if (previewSafeXShape) drawSafeXShape(ctx, previewSafeXShape, s);
-  if (safeXCenter) {
-    const isMobile = "ontouchstart" in window || navigator.maxTouchPoints > 0;
-    const centerRadius = isMobile ? 2.5 : 4;
-    const centerStroke = isMobile ? 1 : 1.5;
-    ctx.beginPath(); ctx.arc(safeXCenter.x * s, safeXCenter.y * s, centerRadius, 0, Math.PI * 2);
-    ctx.fillStyle = "#2563eb"; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = centerStroke; ctx.stroke();
-  }
-
   labels.forEach(label => {
     drawLabelCard(ctx, label, s, label.id === selectedLabelId, labelMeasureCtx);
   });
@@ -328,14 +265,11 @@ export default function App() {
   const [markers, setMarkers] = useState([]);
   const [shapes, setShapes] = useState([]);
   const [arrows, setArrows] = useState([]);
-  const [safeXShapes, setSafeXShapes] = useState([]);
   const [labels, setLabels] = useState([]);
   const [previewShape, setPreviewShape] = useState(null);
   const [previewArrow, setPreviewArrow] = useState(null);
-  const [previewSafeXShape, setPreviewSafeXShape] = useState(null);
   const [ellipseCenter, setEllipseCenter] = useState(null);
   const [arrowCenter, setArrowCenter] = useState(null);
-  const [safeXCenter, setSafeXCenter] = useState(null);
   const [selectedShapeOrArrow, setSelectedShapeOrArrow] = useState(null);
   const [selectedLabelId, setSelectedLabelId] = useState(null);
   const [nextHoldNumber, setNextHoldNumber] = useState(1);
@@ -348,14 +282,12 @@ export default function App() {
   const [labelFontSize, setLabelFontSize] = useState(DEFAULT_LABEL_FONT_SIZE);
   const [ellipseStrokeWidth, setEllipseStrokeWidth] = useState(1.5);
   const [arrowStrokeWidth, setArrowStrokeWidth] = useState(1.5);
-  const [safeXSize, setSafeXSize] = useState(30);
   const [tab, setTab] = useState("place");
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [showHelp, setShowHelp] = useState(false);
   const [showExportSheet, setShowExportSheet] = useState(false);
   const [showMarkerSheet, setShowMarkerSheet] = useState(false);
-  const [showShapeSheet, setShowShapeSheet] = useState(false);
   const [labelEditor, setLabelEditor] = useState({ open: false, id: null, x: 0, y: 0, text: "" });
   const [currentTextStyle, setCurrentTextStyle] = useState("black");
   const [selectedMarkerId, setSelectedMarkerId] = useState(null);
@@ -363,14 +295,13 @@ export default function App() {
 
   const containerRef = useRef(null); const viewportRef = useRef(null); const canvasRef = useRef(null); const imgRef = useRef(null);
   const transformRef = useRef({ zoom: 1, pan: { x: 0, y: 0 } });
-  const markersRef = useRef(markers); const shapesRef = useRef(shapes); const arrowsRef = useRef(arrows); const safeXShapesRef = useRef(safeXShapes); const labelsRef = useRef(labels);
+  const markersRef = useRef(markers); const shapesRef = useRef(shapes); const arrowsRef = useRef(arrows); const labelsRef = useRef(labels);
   const nextHoldNumberRef = useRef(nextHoldNumber); const modeRef = useRef(mode);
-  const ellipseCenterRef = useRef(null); const arrowCenterRef = useRef(null); const safeXCenterRef = useRef(null);
+  const ellipseCenterRef = useRef(null); const arrowCenterRef = useRef(null);
   const pinchRef = useRef(null); const tapRef = useRef(null); const mouseDragRef = useRef(null);
   const labelLongPressRef = useRef(null);
   const markerLongPressRef = useRef(null);
   const labelFontSliderDragRef = useRef(false);
-  const safeXSizeSliderDragRef = useRef(false);
   const markerPopupRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -398,13 +329,11 @@ export default function App() {
   }, [markers, selectedMarkerId]);
   useEffect(() => { shapesRef.current = shapes; }, [shapes]);
   useEffect(() => { arrowsRef.current = arrows; }, [arrows]);
-  useEffect(() => { safeXShapesRef.current = safeXShapes; }, [safeXShapes]);
   useEffect(() => { labelsRef.current = labels; }, [labels]);
   useEffect(() => { nextHoldNumberRef.current = nextHoldNumber; }, [nextHoldNumber]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => { ellipseCenterRef.current = ellipseCenter; }, [ellipseCenter]);
   useEffect(() => { arrowCenterRef.current = arrowCenter; }, [arrowCenter]);
-  useEffect(() => { safeXCenterRef.current = safeXCenter; }, [safeXCenter]);
   useEffect(() => {
     if (!selectedLabelId) return;
     const selected = labels.find(label => label.id === selectedLabelId);
@@ -413,28 +342,16 @@ export default function App() {
     if (selectedSize !== labelFontSize) setLabelFontSize(selectedSize);
   }, [selectedLabelId, labels, labelFontSize]);
   useEffect(() => {
-    if (selectedShapeOrArrow?.type !== "safex") {
-      safeXSizeSliderDragRef.current = false;
-      return;
-    }
-    const selected = safeXShapes.find(shape => shape.id === selectedShapeOrArrow.id);
-    if (!selected) return;
-    const nextSize = Math.max(MIN_SHAPE_RADIUS, Number(selected.size) || Math.max(Number(selected.rx) || 0, Number(selected.ry) || 0) || safeXSize);
-    if (nextSize !== safeXSize) setSafeXSize(nextSize);
-  }, [selectedShapeOrArrow, safeXShapes, safeXSize]);
-  useEffect(() => {
     if (mode !== "label" || !selectedLabelId) labelFontSliderDragRef.current = false;
   }, [mode, selectedLabelId]);
 
   useEffect(() => {
     if (mode !== "ellipse") { setEllipseCenter(null); setPreviewShape(null); }
     if (mode !== "arrow") { setArrowCenter(null); setPreviewArrow(null); }
-    if (mode !== "safex") { setSafeXCenter(null); setPreviewSafeXShape(null); }
     if (MARKER_MODES.includes(mode)) setMarkerMode(mode);
     setSelectedShapeOrArrow(null);
     setSelectedMarkerId(null);
     setShowMarkerSheet(false);
-    setShowShapeSheet(false);
     setMarkerPopup({ open: false, markerId: null, x: 0, y: 0 });
   }, [mode]);
 
@@ -479,20 +396,9 @@ export default function App() {
     window.addEventListener("mousemove", onMouseMove); return () => window.removeEventListener("mousemove", onMouseMove);
   }, [mode, arrowCenter, imgSize]);
 
-  useEffect(() => {
-    if (mode !== "safex" || !safeXCenter) return;
-    const updatePreview = (clientX, clientY) => {
-      const canvas = canvasRef.current; if (!canvas) return;
-      const rect = canvas.getBoundingClientRect(); if (rect.width <= 0) return;
-      setPreviewSafeXShape(safeXFromDrag(safeXCenter.x, safeXCenter.y, (clientX - rect.left) / rect.width * imgSize.w, (clientY - rect.top) / rect.height * imgSize.h));
-    };
-    const onMouseMove = (e) => updatePreview(e.clientX, e.clientY);
-    window.addEventListener("mousemove", onMouseMove); return () => window.removeEventListener("mousemove", onMouseMove);
-  }, [mode, safeXCenter, imgSize]);
-
   const resetTransform = useCallback(() => {
     setZoom(FIT_ZOOM); setPan({ x: 0, y: 0 }); transformRef.current = { zoom: FIT_ZOOM, pan: { x: 0, y: 0 } };
-    pinchRef.current = null; tapRef.current = null; mouseDragRef.current = null; setPreviewShape(null); setPreviewArrow(null); setPreviewSafeXShape(null); setIsDragging(false);
+    pinchRef.current = null; tapRef.current = null; mouseDragRef.current = null; setPreviewShape(null); setPreviewArrow(null); setIsDragging(false);
   }, []);
 
   const reindexMarkers = useCallback((currentList) => {
@@ -536,21 +442,17 @@ export default function App() {
       previewArrow,
       arrowCenter,
       arrowStrokeWidth,
-      safeXShapes,
-      previewSafeXShape,
-      selectedShapeOrArrow?.type === "safex" ? selectedShapeOrArrow.id : null,
-      safeXCenter,
       true,
       labels,
       selectedLabelId
     );
-  }, [markers, shapes, previewShape, ellipseCenter, scale, image, markerSize, ellipseStrokeWidth, arrowStrokeWidth, imgSize, mode, arrows, previewArrow, arrowCenter, safeXShapes, previewSafeXShape, safeXCenter, selectedShapeOrArrow, tab, labels, selectedLabelId]);
+  }, [markers, shapes, previewShape, ellipseCenter, scale, image, markerSize, ellipseStrokeWidth, arrowStrokeWidth, imgSize, mode, arrows, previewArrow, arrowCenter, selectedShapeOrArrow, tab, labels, selectedLabelId]);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0]; if (!file) return;
     const url = URL.createObjectURL(file); const img = new Image();
     img.onload = () => {
-      setImgSize({ w: img.naturalWidth, h: img.naturalHeight }); setImage(url); setMarkers([]); setShapes([]); setArrows([]); setSafeXShapes([]); setLabels([]); setPreviewShape(null); setPreviewArrow(null); setPreviewSafeXShape(null); setEllipseCenter(null); setArrowCenter(null); setSafeXCenter(null); setSelectedLabelId(null); setSelectedMarkerId(null); setHistory([]); setNextHoldNumber(1); resetTransform();
+      setImgSize({ w: img.naturalWidth, h: img.naturalHeight }); setImage(url); setMarkers([]); setShapes([]); setArrows([]); setLabels([]); setPreviewShape(null); setPreviewArrow(null); setEllipseCenter(null); setArrowCenter(null); setSelectedLabelId(null); setSelectedMarkerId(null); setHistory([]); setNextHoldNumber(1); resetTransform();
     };
     img.src = url;
   };
@@ -609,12 +511,12 @@ export default function App() {
         setHistory(prev => [...prev, makeSnapshot()]);
         
         if (lockNumber) {
-          setMarkers(importedMarkers); setShapes(importedShapes); setArrows(importedArrows); setSafeXShapes([]);
+          setMarkers(importedMarkers); setShapes(importedShapes); setArrows(importedArrows);
           setNextHoldNumber(getNextHoldFromList(importedMarkers));
           alert(`🎉 복원 성공!\n- 마커: ${importedMarkers.length}개\n- 원형 도형: ${importedShapes.length}개\n- 화살표: ${importedArrows.length}개`);
         } else {
           const { updatedList, nextHold } = reindexMarkers(importedMarkers);
-          setMarkers(updatedList); setShapes(importedShapes); setArrows(importedArrows); setSafeXShapes([]); setNextHoldNumber(nextHold);
+          setMarkers(updatedList); setShapes(importedShapes); setArrows(importedArrows); setNextHoldNumber(nextHold);
           alert(`🎉 복원 성공!\n- 마커: ${updatedList.length}개\n- 원형 도형: ${importedShapes.length}개\n- 화살표: ${importedArrows.length}개`);
         }
 
@@ -640,7 +542,6 @@ export default function App() {
     markers: markersRef.current.map(m => ({ ...m })),
     shapes: shapesRef.current.map(s => ({ ...s })),
     arrows: arrowsRef.current.map(a => ({ ...a })),
-    safeXShapes: safeXShapesRef.current.map(x => ({ ...x })),
     labels: labelsRef.current.map(l => ({ ...l })),
     nextHoldNumber: nextHoldNumberRef.current,
   }), []);
@@ -666,15 +567,6 @@ export default function App() {
     const list = shapesRef.current;
     for (let i = list.length - 1; i >= 0; i--) {
       const shape = list[i]; if (pointInEllipse(coords.x, coords.y, shape, MARKER_RADIUS)) return shape;
-    }
-    return null;
-  }, [clientToImageCoords]);
-
-  const findSafeXShapeAt = useCallback((clientX, clientY) => {
-    const coords = clientToImageCoords(clientX, clientY); if (!coords) return null;
-    const list = safeXShapesRef.current;
-    for (let i = list.length - 1; i >= 0; i--) {
-      const shape = list[i]; if (pointInEllipse(coords.x, coords.y, safeXToEllipseLike(shape), MARKER_RADIUS)) return shape;
     }
     return null;
   }, [clientToImageCoords]);
@@ -714,7 +606,7 @@ export default function App() {
     const rect = canvas.getBoundingClientRect(); if (rect.width <= 0) return null;
     const hitR = (16 / rect.width) * imgSize.w; const coords = clientToImageCoords(clientX, clientY, true); if (!coords) return null;
     const shape = shapesRef.current.find(s => s.id === selectedShapeOrArrow.id); if (!shape) return null;
-    for (const h of getShapeHandles(shape)) { if (Math.hypot(coords.x - h.x, coords.y - h.y) <= hitR) return { shapeId: shape.id, shapeType: selectedShapeOrArrow.type, handleId: h.id, origin: { cx: shape.cx, cy: shape.cy, rx: shape.rx, ry: shape.ry } }; }
+    for (const h of getShapeHandles(shape)) { if (Math.hypot(coords.x - h.x, coords.y - h.y) <= hitR) return { shapeId: shape.id, handleId: h.id, origin: { cx: shape.cx, cy: shape.cy, rx: shape.rx, ry: shape.ry } }; }
     return null;
   }, [clientToImageCoords, imgSize.w, selectedShapeOrArrow]);
 
@@ -726,11 +618,6 @@ export default function App() {
   const moveShapeTo = useCallback((shapeId, clientX, clientY, offsetX = 0, offsetY = 0) => {
     const coords = clientToImageCoords(clientX, clientY); if (!coords) return;
     setShapes(prev => prev.map(s => s.id === shapeId ? { ...s, cx: coords.x + offsetX, cy: coords.y + offsetY } : s));
-  }, [clientToImageCoords]);
-
-  const moveSafeXShapeTo = useCallback((shapeId, clientX, clientY, offsetX = 0, offsetY = 0) => {
-    const coords = clientToImageCoords(clientX, clientY); if (!coords) return;
-    setSafeXShapes(prev => prev.map(s => s.id === shapeId ? { ...s, cx: coords.x + offsetX, cy: coords.y + offsetY } : s));
   }, [clientToImageCoords]);
 
   const moveArrowTo = useCallback((arrowId, clientX, clientY, offsetX1 = 0, offsetY1 = 0, offsetX2 = 0, offsetY2 = 0) => {
@@ -790,34 +677,11 @@ export default function App() {
     labelFontSliderDragRef.current = false;
   }, []);
 
-  const handleSafeXSizeChange = useCallback((value) => {
-    const nextSize = Number(value);
-    setSafeXSize(nextSize);
-    if (selectedShapeOrArrow?.type !== "safex") return;
-    if (!safeXSizeSliderDragRef.current) {
-      setHistory(prev => [...prev, makeSnapshot()]);
-      safeXSizeSliderDragRef.current = true;
-    }
-    setSafeXShapes(prev => prev.map(shape => shape.id === selectedShapeOrArrow.id ? { ...shape, size: nextSize } : shape));
-  }, [selectedShapeOrArrow, makeSnapshot]);
-
-  const handleSafeXSizeCommit = useCallback(() => {
-    safeXSizeSliderDragRef.current = false;
-  }, []);
-
-  const resizeShapeByHandle = useCallback((shapeId, shapeType, handleId, clientX, clientY, origin) => {
+  const resizeShapeByHandle = useCallback((shapeId, handleId, clientX, clientY, origin) => {
     const coords = clientToImageCoords(clientX, clientY, true); if (!coords) return;
     const { cx, cy } = origin; let rx = origin.rx; let ry = origin.ry;
     if (handleId === "e" || handleId === "w") rx = Math.max(MIN_SHAPE_RADIUS, Math.abs(coords.x - cx));
     else if (handleId === "n" || handleId === "s") ry = Math.max(MIN_SHAPE_RADIUS, Math.abs(coords.y - cy));
-    if (shapeType === "safex") {
-      const sizeByX = Math.max(MIN_SHAPE_RADIUS, Math.abs(coords.x - cx));
-      const sizeByY = Math.max(MIN_SHAPE_RADIUS, Math.abs(coords.y - cy));
-      const size = handleId === "n" || handleId === "s" ? sizeByY : sizeByX;
-      setSafeXShapes(prev => prev.map(s => s.id === shapeId ? { ...s, size } : s));
-      setSafeXSize(size);
-      return;
-    }
     setShapes(prev => prev.map(s => s.id === shapeId ? { ...s, rx, ry } : s));
   }, [clientToImageCoords]);
 
@@ -850,19 +714,6 @@ export default function App() {
     setArrowCenter({ x: coords.x, y: coords.y });
   }, [clientToImageCoords, makeSnapshot, findArrowAt]);
 
-  const handleSafeXTap = useCallback((clientX, clientY) => {
-    const coords = clientToImageCoords(clientX, clientY); if (!coords) return;
-    setSelectedMarkerId(null);
-    const clickedShape = findSafeXShapeAt(clientX, clientY); if (clickedShape) { setSelectedShapeOrArrow({ type: "safex", id: clickedShape.id }); setSelectedLabelId(null); return; }
-    const snapshot = makeSnapshot();
-    const nextId = generateUUID();
-    const size = Math.max(MIN_SHAPE_RADIUS, Number(safeXSize) || MIN_SHAPE_RADIUS);
-    setHistory(prev => [...prev, snapshot]);
-    setSafeXShapes(prev => [...prev, { id: nextId, cx: coords.x, cy: coords.y, size }]);
-    setSelectedShapeOrArrow({ type: "safex", id: nextId });
-    setSelectedLabelId(null);
-  }, [clientToImageCoords, makeSnapshot, findSafeXShapeAt, safeXSize]);
-
   const handleLabelTap = useCallback((clientX, clientY) => {
     setSelectedMarkerId(null);
     const clickedLabel = findLabelAt(clientX, clientY);
@@ -879,7 +730,7 @@ export default function App() {
   }, [findLabelAt, clientToImageCoords, openLabelEditorForNew]);
 
   const placeMarkerAt = useCallback((clientX, clientY) => {
-    if (!image || mode === "ellipse" || mode === "arrow" || mode === "safex" || mode === "label") return;
+    if (!image || mode === "ellipse" || mode === "arrow" || mode === "label") return;
     const coords = clientToImageCoords(clientX, clientY); if (!coords) return;
     setSelectedLabelId(null);
     setSelectedShapeOrArrow(null);
@@ -1033,7 +884,6 @@ export default function App() {
     }
     if (selectedShapeOrArrow.type === "shape") setShapes(prev => prev.filter(s => s.id !== selectedShapeOrArrow.id));
     else if (selectedShapeOrArrow.type === "arrow") setArrows(prev => prev.filter(a => a.id !== selectedShapeOrArrow.id));
-    else if (selectedShapeOrArrow.type === "safex") setSafeXShapes(prev => prev.filter(s => s.id !== selectedShapeOrArrow.id));
     setSelectedShapeOrArrow(null);
   };
 
@@ -1058,15 +908,11 @@ export default function App() {
       return { type: "marker", markerId: hitMarker.id, startX: clientX, startY: clientY, offsetX: coords ? hitMarker.x - coords.x : 0, offsetY: coords ? hitMarker.y - coords.y : 0, moved: false, snapshot: makeSnapshot() };
     }
     if (modeRef.current === "ellipse") {
-      const hitHandle = findHandleAt(clientX, clientY); if (hitHandle) return { type: "resize-shape", shapeId: hitHandle.shapeId, shapeType: hitHandle.shapeType, handleId: hitHandle.handleId, origin: hitHandle.origin, startX: clientX, startY: clientY, moved: false, snapshot: makeSnapshot() };
+      const hitHandle = findHandleAt(clientX, clientY); if (hitHandle) return { type: "resize-shape", shapeId: hitHandle.shapeId, handleId: hitHandle.handleId, origin: hitHandle.origin, startX: clientX, startY: clientY, moved: false, snapshot: makeSnapshot() };
       if (!ellipseCenterRef.current) {
         const hitShape = findShapeAt(clientX, clientY); if (hitShape) { const coords = clientToImageCoords(clientX, clientY); return { type: "shape", shapeId: hitShape.id, startX: clientX, startY: clientY, offsetX: coords ? hitShape.cx - coords.x : 0, offsetY: coords ? hitShape.cy - coords.y : 0, moved: false, snapshot: makeSnapshot() }; }
       }
       return { type: "pan", startX: clientX, startY: clientY, startPan: { ...transformRef.current.pan }, moved: false, ellipseTap: true };
-    }
-    if (modeRef.current === "safex") {
-      const hitShape = findSafeXShapeAt(clientX, clientY); if (hitShape) { const coords = clientToImageCoords(clientX, clientY); return { type: "safex", shapeId: hitShape.id, startX: clientX, startY: clientY, offsetX: coords ? hitShape.cx - coords.x : 0, offsetY: coords ? hitShape.cy - coords.y : 0, moved: false, snapshot: makeSnapshot() }; }
-      return { type: "pan", startX: clientX, startY: clientY, startPan: { ...transformRef.current.pan }, moved: false, safeXTap: true };
     }
     if (modeRef.current === "arrow") {
       if (!arrowCenterRef.current) {
@@ -1087,13 +933,12 @@ export default function App() {
       return { type: "pan", startX: clientX, startY: clientY, startPan: { ...transformRef.current.pan }, moved: false, labelTap: true };
     }
     return { type: "pan", startX: clientX, startY: clientY, startPan: { ...transformRef.current.pan }, moved: false };
-  }, [findLabelAt, findMarkerAt, findShapeAt, findSafeXShapeAt, findHandleAt, findArrowAt, makeSnapshot, clientToImageCoords]);
+  }, [findLabelAt, findMarkerAt, findShapeAt, findHandleAt, findArrowAt, makeSnapshot, clientToImageCoords]);
 
   const handleMouseDown = (e) => {
     if (!image || e.button !== 0 || markerPopup.open) return;
     clearMarkerLongPress();
     setShowMarkerSheet(false);
-    setShowShapeSheet(false);
     e.preventDefault(); mouseDragRef.current = beginPointerDrag(e.clientX, e.clientY);
   };
 
@@ -1135,9 +980,8 @@ export default function App() {
       if (!drag.moved) return;
       if (drag.type === "label") moveLabelTo(drag.labelId, e.clientX, e.clientY, drag.offsetX, drag.offsetY);
       else if (drag.type === "marker") moveMarkerTo(drag.markerId, e.clientX, e.clientY, drag.offsetX, drag.offsetY);
-      else if (drag.type === "resize-shape") resizeShapeByHandle(drag.shapeId, drag.shapeType, drag.handleId, e.clientX, e.clientY, drag.origin);
+      else if (drag.type === "resize-shape") resizeShapeByHandle(drag.shapeId, drag.handleId, e.clientX, e.clientY, drag.origin);
       else if (drag.type === "shape") moveShapeTo(drag.shapeId, e.clientX, e.clientY, drag.offsetX, drag.offsetY);
-      else if (drag.type === "safex") moveSafeXShapeTo(drag.shapeId, e.clientX, e.clientY, drag.offsetX, drag.offsetY);
       else if (drag.type === "arrow") moveArrowTo(drag.arrowId, e.clientX, e.clientY, drag.offsetX1, drag.offsetY1, drag.offsetX2, drag.offsetY2);
       else if (drag.type === "pan") { const newPan = { x: drag.startPan.x + dx, y: drag.startPan.y + dy }; transformRef.current = { ...transformRef.current, pan: newPan }; setPan(newPan); }
     };
@@ -1176,15 +1020,6 @@ export default function App() {
         }
         return;
       }
-      if (drag.type === "safex") {
-        if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
-        else {
-          setSelectedShapeOrArrow({ type: "safex", id: drag.shapeId });
-          setSelectedLabelId(null);
-          setSelectedMarkerId(null);
-        }
-        return;
-      }
       if (drag.type === "arrow") {
         if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
         else {
@@ -1197,14 +1032,13 @@ export default function App() {
       if (!drag.moved) {
         if (drag.ellipseTap) handleEllipseTap(e.clientX, e.clientY, e.shiftKey);
         else if (drag.arrowTap) handleArrowTap(e.clientX, e.clientY);
-        else if (drag.safeXTap) handleSafeXTap(e.clientX, e.clientY);
         else if (drag.labelTap) handleLabelTap(e.clientX, e.clientY);
         else placeMarkerAt(e.clientX, e.clientY);
       }
     };
     window.addEventListener("mousemove", handleMouseMove); window.addEventListener("mouseup", handleMouseUp);
     return () => { window.removeEventListener("mousemove", handleMouseMove); window.removeEventListener("mouseup", handleMouseUp); };
-  }, [placeMarkerAt, handleEllipseTap, handleArrowTap, handleSafeXTap, handleLabelTap, moveLabelTo, moveMarkerTo, moveShapeTo, moveSafeXShapeTo, moveArrowTo, resizeShapeByHandle]);
+  }, [placeMarkerAt, handleEllipseTap, handleArrowTap, handleLabelTap, moveLabelTo, moveMarkerTo, moveShapeTo, moveArrowTo, resizeShapeByHandle]);
 
   useEffect(() => {
     const preventPageZoom = (e) => { if (e.ctrlKey) e.preventDefault(); }; document.addEventListener("wheel", preventPageZoom, { passive: false });
@@ -1239,7 +1073,6 @@ export default function App() {
     e.preventDefault();
     clearMarkerLongPress();
     setShowMarkerSheet(false);
-    setShowShapeSheet(false);
     if (e.touches.length === 2) { clearLabelLongPress(); e.preventDefault(); beginPinch(e.touches[0], e.touches[1]); return; }
     if (e.touches.length === 1 && !pinchRef.current) {
       const touch = e.touches[0];
@@ -1281,7 +1114,7 @@ export default function App() {
     const drag = tapRef.current;
     if (e.touches.length === 1 && drag && !pinchRef.current) {
       e.preventDefault(); const t = e.touches[0]; const dx = t.clientX - drag.startX; const dy = t.clientY - drag.startY;
-      const moveThreshold = (drag.arrowTap || drag.ellipseTap || drag.safeXTap) ? 24 : TAP_MOVE_THRESHOLD;
+      const moveThreshold = (drag.arrowTap || drag.ellipseTap) ? 24 : TAP_MOVE_THRESHOLD;
       if (!drag.moved && Math.hypot(dx, dy) > moveThreshold) { drag.moved = true; clearLabelLongPress(); clearMarkerLongPress(); setIsDragging(true); }
       if (!drag.moved) return;
       
@@ -1291,9 +1124,8 @@ export default function App() {
       else if (drag.type === "marker") { 
         moveMarkerTo(drag.markerId, t.clientX, t.clientY, drag.offsetX, drag.offsetY); 
       }
-      else if (drag.type === "resize-shape") resizeShapeByHandle(drag.shapeId, drag.shapeType, drag.handleId, t.clientX, t.clientY, drag.origin);
+      else if (drag.type === "resize-shape") resizeShapeByHandle(drag.shapeId, drag.handleId, t.clientX, t.clientY, drag.origin);
       else if (drag.type === "shape") moveShapeTo(drag.shapeId, t.clientX, t.clientY, drag.offsetX, drag.offsetY);
-      else if (drag.type === "safex") moveSafeXShapeTo(drag.shapeId, t.clientX, t.clientY, drag.offsetX, drag.offsetY);
       else if (drag.type === "arrow") moveArrowTo(drag.arrowId, t.clientX, t.clientY, drag.offsetX1, drag.offsetY1, drag.offsetX2, drag.offsetY2);
       else if (drag.type === "pan") { const newPan = { x: drag.startPan.x + dx, y: drag.startPan.y + dy }; transformRef.current = { ...transformRef.current, pan: newPan }; setPan(newPan); }
     }
@@ -1306,7 +1138,7 @@ export default function App() {
     if (pinchRef.current) { 
       e.preventDefault(); 
       if (e.touches.length < 2) {
-        pinchRef.current = null; tapRef.current = null; setPreviewShape(null); setPreviewArrow(null); setPreviewSafeXShape(null); setIsDragging(false); 
+        pinchRef.current = null; tapRef.current = null; setPreviewShape(null); setPreviewArrow(null); setIsDragging(false); 
       }
       return; 
     }
@@ -1344,15 +1176,6 @@ export default function App() {
         }
         return;
       }
-      if (drag.type === "safex") {
-        if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
-        else {
-          setSelectedShapeOrArrow({ type: "safex", id: drag.shapeId });
-          setSelectedLabelId(null);
-          setSelectedMarkerId(null);
-        }
-        return;
-      }
       if (drag.type === "arrow") {
         if (drag.moved) setHistory(prev => [...prev, drag.snapshot]);
         else {
@@ -1366,7 +1189,6 @@ export default function App() {
         const t = e.changedTouches[0];
         if (drag.ellipseTap) handleEllipseTap(t.clientX, t.clientY, false);
         else if (drag.arrowTap) handleArrowTap(t.clientX, t.clientY);
-        else if (drag.safeXTap) handleSafeXTap(t.clientX, t.clientY);
         else if (drag.labelTap) handleLabelTap(t.clientX, t.clientY);
         else placeMarkerAt(t.clientX, t.clientY);
       }
@@ -1377,7 +1199,7 @@ export default function App() {
     pinchRef.current = { startDistance: getTouchDistance(t1, t2), startZoom: transformRef.current.zoom, startPan: { ...transformRef.current.pan }, startMid: getTouchMidpoint(t1, t2) };
     clearLabelLongPress();
     clearMarkerLongPress();
-    tapRef.current = null; mouseDragRef.current = null; setPreviewShape(null); setPreviewArrow(null); setPreviewSafeXShape(null); setIsDragging(false);
+    tapRef.current = null; mouseDragRef.current = null; setPreviewShape(null); setPreviewArrow(null); setIsDragging(false);
   };
 
   const applyPinch = (t1, t2) => {
@@ -1402,8 +1224,8 @@ export default function App() {
 
   const handleUndo = () => {
     if (history.length === 0) return; const snapshot = history[history.length - 1];
-    setMarkers(snapshot.markers); setShapes(snapshot.shapes ?? []); setArrows(snapshot.arrows ?? []); setSafeXShapes(snapshot.safeXShapes ?? []); setLabels(snapshot.labels ?? []); setNextHoldNumber(snapshot.nextHoldNumber);
-    setPreviewShape(null); setPreviewArrow(null); setPreviewSafeXShape(null); setHistory(h => h.slice(0, -1)); setSelectedShapeOrArrow(null); setSelectedLabelId(null); setSelectedMarkerId(null); closeMarkerPopup();
+    setMarkers(snapshot.markers); setShapes(snapshot.shapes ?? []); setArrows(snapshot.arrows ?? []); setLabels(snapshot.labels ?? []); setNextHoldNumber(snapshot.nextHoldNumber);
+    setPreviewShape(null); setPreviewArrow(null); setHistory(h => h.slice(0, -1)); setSelectedShapeOrArrow(null); setSelectedLabelId(null); setSelectedMarkerId(null); closeMarkerPopup();
   };
 
   const handleExportCSV = () => {
@@ -1422,7 +1244,7 @@ export default function App() {
     if (!imgRef.current) return; const offscreen = document.createElement("canvas"); offscreen.width = imgSize.w; offscreen.height = imgSize.h;
     const ctx = offscreen.getContext("2d"); ctx.drawImage(imgRef.current, 0, 0);
     const overlay = document.createElement("canvas"); overlay.width = imgSize.w; overlay.height = imgSize.h;
-    drawAll(overlay.getContext("2d"), markers, 1, markerSize, 1, shapesRef.current, null, false, null, scale > 0 ? ellipseStrokeWidth / scale : ellipseStrokeWidth, arrowsRef.current, null, null, scale > 0 ? arrowStrokeWidth / scale : arrowStrokeWidth, safeXShapesRef.current, null, null, null, false, labelsRef.current, null);
+    drawAll(overlay.getContext("2d"), markers, 1, markerSize, 1, shapesRef.current, null, false, null, scale > 0 ? ellipseStrokeWidth / scale : ellipseStrokeWidth, arrowsRef.current, null, null, scale > 0 ? arrowStrokeWidth / scale : arrowStrokeWidth, false, labelsRef.current, null);
     ctx.drawImage(overlay, 0, 0); 
     const a = document.createElement("a"); const url = offscreen.toDataURL("image/png");
     a.href = url; a.download = "route_map.png"; a.click();
@@ -1432,7 +1254,7 @@ export default function App() {
     if (!imgRef.current) return; const offscreen = document.createElement("canvas"); offscreen.width = imgSize.w; offscreen.height = imgSize.h;
     const ctx = offscreen.getContext("2d"); ctx.drawImage(imgRef.current, 0, 0);
     const overlay = document.createElement("canvas"); overlay.width = imgSize.w; overlay.height = imgSize.h;
-    drawAll(overlay.getContext("2d"), markers, 1, markerSize, 1, shapesRef.current, null, false, null, scale > 0 ? ellipseStrokeWidth / scale : ellipseStrokeWidth, arrowsRef.current, null, null, scale > 0 ? arrowStrokeWidth / scale : arrowStrokeWidth, safeXShapesRef.current, null, null, null, false, labelsRef.current, null);
+    drawAll(overlay.getContext("2d"), markers, 1, markerSize, 1, shapesRef.current, null, false, null, scale > 0 ? ellipseStrokeWidth / scale : ellipseStrokeWidth, arrowsRef.current, null, null, scale > 0 ? arrowStrokeWidth / scale : arrowStrokeWidth, false, labelsRef.current, null);
     ctx.drawImage(overlay, 0, 0); 
     const a = document.createElement("a"); const url = offscreen.toDataURL("image/jpeg", 0.92);
     a.href = url; a.download = "route_map.jpg"; a.click();
@@ -1443,7 +1265,7 @@ export default function App() {
     const exportCanvas = document.createElement("canvas"); exportCanvas.width = imgSize.w; exportCanvas.height = imgSize.h;
     const ctx = exportCanvas.getContext("2d"); ctx.drawImage(imgRef.current, 0, 0);
     const overlay = document.createElement("canvas"); overlay.width = imgSize.w; overlay.height = imgSize.h;
-    drawAll(overlay.getContext("2d"), markers, 1, markerSize, 1, shapesRef.current, null, false, null, scale > 0 ? ellipseStrokeWidth / scale : ellipseStrokeWidth, arrowsRef.current, null, null, scale > 0 ? arrowStrokeWidth / scale : arrowStrokeWidth, safeXShapesRef.current, null, null, null, false, labelsRef.current, null);
+    drawAll(overlay.getContext("2d"), markers, 1, markerSize, 1, shapesRef.current, null, false, null, scale > 0 ? ellipseStrokeWidth / scale : ellipseStrokeWidth, arrowsRef.current, null, null, scale > 0 ? arrowStrokeWidth / scale : arrowStrokeWidth, false, labelsRef.current, null);
     ctx.drawImage(overlay, 0, 0);
     const dataUrl = exportCanvas.toDataURL("image/png");
 
@@ -1470,8 +1292,6 @@ export default function App() {
   const displayW = imgSize.w * scale; const displayH = imgSize.h * scale;
   const currentMarkerKey = markerMode;
   const currentMarkerMeta = MARKER_MODE_META[currentMarkerKey];
-  const currentShapeKey = SHAPE_MODES.includes(mode) ? mode : "safex";
-  const currentShapeMeta = SHAPE_MODE_META[currentShapeKey];
   const selectedLabel = selectedLabelId ? labels.find(label => label.id === selectedLabelId) : null;
   const selectedLabelSize = selectedLabel ? Math.max(LABEL_MIN_FONT_SIZE, Number(selectedLabel.fontSize) || DEFAULT_LABEL_FONT_SIZE) : null;
   const selectedMarker = selectedMarkerId ? markers.find(marker => marker.id === selectedMarkerId) : null;
@@ -1546,22 +1366,11 @@ export default function App() {
             >
               {currentMarkerMeta.icon} {currentMarkerMeta.label} ▼
             </button>
-            <button
-              onClick={() => setShowShapeSheet(true)}
-              style={{
-                flexShrink:0,
-                padding:"6px 12px",
-                borderRadius:8,
-                fontSize:12,
-                fontWeight:"bold",
-                cursor:"pointer",
-                border: SHAPE_MODES.includes(mode) ? "2px solid white" : "2px solid transparent",
-                background: currentShapeMeta.color,
-                color: currentShapeMeta.text,
-                opacity: SHAPE_MODES.includes(mode) ? 1 : 0.85,
-              }}
-            >
-              {currentShapeMeta.icon} {currentShapeMeta.label} ▼
+            <button onClick={() => setMode("arrow")} style={{ flexShrink:0, padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:"bold", cursor:"pointer", border: mode==="arrow" ? "2px solid white" : "2px solid transparent", background: mode==="arrow" ? "#ff4500" : "#333", color: "white", opacity: mode==="arrow" ? 1 : 0.75 }}>
+              ➖ 선
+            </button>
+            <button onClick={() => setMode("ellipse")} style={{ flexShrink:0, padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:"bold", cursor:"pointer", border: mode==="ellipse" ? "2px solid white" : "2px solid transparent", background: mode==="ellipse" ? "#a3a3a3" : "#333", color: mode==="ellipse" ? "#111" : "white", opacity: mode==="ellipse" ? 1 : 0.75 }}>
+              ⭕ 원형
             </button>
             <button onClick={() => setMode("label")} style={{ flexShrink:0, padding:"6px 12px", borderRadius:8, fontSize:12, fontWeight:"bold", cursor:"pointer", border: mode==="label" ? "2px solid white" : "2px solid transparent", background: mode==="label" ? "#f59e0b" : "#333", color: mode==="label" ? "#111" : "white", opacity: mode==="label" ? 1 : 0.75 }}>
               🏷 제목
@@ -1586,21 +1395,6 @@ export default function App() {
                 <span style={{ fontSize:11, color:"#666", whiteSpace:"nowrap" }}>화살표 테두리 두께</span>
                 <input type="range" min={1} max={8} step={0.5} value={arrowStrokeWidth} onChange={e => setArrowStrokeWidth(Number(e.target.value))} style={{ flex:1 }} />
                 <span style={{ fontSize:11, color:"#888", width:28 }}>{arrowStrokeWidth}</span>
-              </>
-            ) : mode === "safex" ? (
-              <>
-                <span style={{ fontSize:11, color:"#666", whiteSpace:"nowrap" }}>안전 X 크기</span>
-                <input
-                  type="range"
-                  min={MIN_SHAPE_RADIUS}
-                  max={220}
-                  value={safeXSize}
-                  onChange={e => handleSafeXSizeChange(e.target.value)}
-                  onMouseUp={handleSafeXSizeCommit}
-                  onTouchEnd={handleSafeXSizeCommit}
-                  style={{ flex:1 }}
-                />
-                <span style={{ fontSize:11, color:"#888", width:36 }}>{Math.round(safeXSize)}</span>
               </>
             ) : mode === "label" ? (
               <>
@@ -1630,7 +1424,7 @@ export default function App() {
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"6px 12px", background:"#0a0a0f", borderBottom:"1px solid #1a1a1a", flexShrink:0, zIndex:200 }}>
             <span style={{ fontSize:11, color:"#93c5fd", fontWeight: "bold" }}>
               {/* ⚡ [피드백 반영] 유저 가이드 텍스트 최적화 완료 */}
-              {!image ? "사진을 먼저 열어주세요" : selectedLabelId ? `🚨 선택됨: [Label]   ${selectedLabelSize ?? labelFontSize}px` : selectedMarker ? `🚨 선택됨: [${selectedMarker.type === "duo" ? `Duo #${selectedMarker.label}` : `Hold #${selectedMarker.number}`}]` : selectedShapeOrArrow ? `🚨 선택됨: [${selectedShapeOrArrow.type === "shape" ? "원형" : selectedShapeOrArrow.type === "safex" ? "안전 홀드(X)" : "화살표"}]` : mode==="ellipse" ? "클릭: 중심 / 원 선택 후 삭제 가능" : mode==="arrow" ? "클릭: 시작점 ➡️ 끝점 / 선택 시 삭제" : mode==="safex" ? "클릭 즉시 안전 X 생성 / 드래그·슬라이더로 수정" : mode==="label" ? "터치: Label 생성 / 더블클릭·길게누르기: 편집" : `다음 홀드: #${nextHoldNumber}`}
+              {!image ? "사진을 먼저 열어주세요" : selectedLabelId ? `🚨 선택됨: [Label]   ${selectedLabelSize ?? labelFontSize}px` : selectedMarker ? `🚨 선택됨: [${selectedMarker.type === "duo" ? `Duo #${selectedMarker.label}` : `Hold #${selectedMarker.number}`}]` : selectedShapeOrArrow ? `🚨 선택됨: [${selectedShapeOrArrow.type === "shape" ? "원형" : "화살표"}]` : mode==="ellipse" ? "클릭: 중심 / 원 선택 후 삭제 가능" : mode==="arrow" ? "클릭: 시작점 ➡️ 끝점 / 선택 시 삭제" : mode==="label" ? "터치: Label 생성 / 더블클릭·길게누르기: 편집" : `다음 홀드: #${nextHoldNumber}`}
             </span>
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
               {(selectedShapeOrArrow || selectedLabelId) && (
@@ -1792,46 +1586,6 @@ export default function App() {
               );
             })}
             <button onClick={() => setShowMarkerSheet(false)} style={{ marginTop:4, minHeight:44, background:"#27272a", color:"#d4d4d8", border:"1px solid #3f3f46", borderRadius:10, padding:"11px 0", fontSize:14, fontWeight:"bold", cursor:"pointer" }}>취소</button>
-          </div>
-        </div>
-      )}
-
-      {showShapeSheet && (
-        <div onClick={() => setShowShapeSheet(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:1090, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width:"100%", maxWidth:520, background:"#111", borderTopLeftRadius:16, borderTopRightRadius:16, borderTop:"1px solid #333", padding:"14px 12px calc(12px + env(safe-area-inset-bottom)) 12px", display:"flex", flexDirection:"column", gap:10 }}>
-            <div style={{ fontSize:14, fontWeight:"bold", color:"#e5e7eb", textAlign:"center", marginBottom:2 }}>도형 선택</div>
-            {SHAPE_PICKER_ORDER.map((shapeKey) => {
-              const shapeMeta = SHAPE_MODE_META[shapeKey];
-              const isSelected = mode === shapeKey;
-              return (
-                <button
-                  key={shapeKey}
-                  onClick={() => {
-                    setMode(shapeKey);
-                    setShowShapeSheet(false);
-                  }}
-                  style={{
-                    width:"100%",
-                    minHeight:46,
-                    borderRadius:12,
-                    border:isSelected ? "1px solid #60a5fa" : "1px solid #374151",
-                    background:isSelected ? "rgba(59,130,246,0.22)" : "#1f2937",
-                    color:"#fff",
-                    fontSize:16,
-                    fontWeight:"bold",
-                    cursor:"pointer",
-                    display:"flex",
-                    alignItems:"center",
-                    justifyContent:"space-between",
-                    padding:"0 14px",
-                  }}
-                >
-                  <span>{shapeMeta.icon} {shapeMeta.label}</span>
-                  <span style={{ color:isSelected ? "#93c5fd" : "#6b7280", fontSize:14 }}>{isSelected ? "선택됨" : ""}</span>
-                </button>
-              );
-            })}
-            <button onClick={() => setShowShapeSheet(false)} style={{ marginTop:4, minHeight:44, background:"#27272a", color:"#d4d4d8", border:"1px solid #3f3f46", borderRadius:10, padding:"11px 0", fontSize:14, fontWeight:"bold", cursor:"pointer" }}>취소</button>
           </div>
         </div>
       )}
