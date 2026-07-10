@@ -1934,20 +1934,38 @@ export default function App() {
 
       {showHelp && (
         <div onClick={() => setShowHelp(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position:"relative", background:"#111", borderRadius:12, padding:20, maxWidth:360, color:"white", border:"1px solid #333", textAlign:"center" }}>
+          <div onClick={e => e.stopPropagation()} style={{ position:"relative", background:"#111", borderRadius:12, padding:20, maxWidth:420, maxHeight:"80vh", overflowY:"auto", color:"white", border:"1px solid #333", textAlign: "left"}}>
             <button onClick={() => setShowHelp(false)} style={{ position:"absolute", top:12, right:12, background:"none", border:"none", color:"#aaa", fontSize:18, cursor:"pointer", lineHeight:1 }}>✕</button>
-      <div style={{ fontSize:16, fontWeight:"bold", marginBottom:16, color:"#3b82f6" }}>도움말</div>
-      <a
-          href="https://docs.google.com/document/d/1WH7EYsIRaxez_ny7S5npapkhZ2JPobw2/edit?tab=t.0"
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{ display:"inline-block", background:"#2563eb", color:"#fff", padding:"10px 18px", borderRadius:8, textDecoration:"none", fontSize:14, fontWeight:"bold" }}
-      >
-        사용 매뉴얼 보기
-      </a>
-    </div>
-  </div>
-)}
+            <div style={{ fontSize:16, fontWeight:"bold", marginBottom:14, color:"#3b82f6" }}>❓ 도움말</div>
+
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:13, fontWeight:"bold", color:"#93c5fd", marginBottom:6 }}>기본 기능</div>
+              <ul style={{ margin:0, paddingLeft:18, fontSize:12, color:"#ddd", lineHeight:1.7 }}>
+                <li>사진 열기: 상단 "사진 열기" 버튼으로 루트 사진 업로드</li>
+                <li>배치 모드: 홀드/START/TOP/클립/듀오/원형/화살표 중 선택 후 사진 위 클릭</li>
+                {showLockNumberFeature && (
+                  <li>🔒 번호 고정: 켜두면 홀드 번호가 자동 증가하지 않고 고정됨 (파라클라이밍용)</li>
+                )}
+                <li>슬라이더: 홀드 모드에서는 글자 크기, 원형/화살표 모드에서는 각각 테두리 두께 조절</li>
+                <li>↩ 취소: 방금 작업 되돌리기</li>
+                <li>줌 리셋: 확대/축소를 원래대로</li>
+                <li>PNG/JPG/PDF/CSV 저장 및 CSV 불러오기 지원</li>
+              </ul>
+            </div>
+
+            <div>
+              <div style={{ fontSize:13, fontWeight:"bold", color:"#93c5fd", marginBottom:6 }}>번호 삽입 기능</div>
+              <ul style={{ margin:0, paddingLeft:18, fontSize:12, color:"#ddd", lineHeight:1.7 }}>
+                <li>홀드를 클릭하면 번호가 1부터 자동으로 매겨짐</li>
+                <li>목록 탭(📋 목록)에서 각 홀드 사이의 "➕ 이 사이에 새 홀드 삽입" 버튼을 누르면 중간에 새 홀드를 끼워넣을 수 있음</li>
+                <li>삽입하면 뒤쪽 번호들이 자동으로 다시 매겨짐(재인덱싱)</li>
+                <li>듀오 홀드(듀오 모드로 찍은 짝)는 재인덱싱 시에도 항상 쌍으로 유지됨</li>
+                <li>목록 탭에서 홀드 타입(hold/start/top/clip/duo)도 바로 변경 가능</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showExportSheet && (
         <div onClick={() => setShowExportSheet(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:1100, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
